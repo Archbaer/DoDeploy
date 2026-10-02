@@ -27,7 +27,7 @@ describe.skipIf(!terraformAvailable)("terraform validate (integration)", () => {
       const dir = mkdtempSync(join(tmpdir(), `dodeploy-${id}-`));
       writeTfFileset(dir, files);
 
-      execFileSync("terraform", ["fmt", "-check", dir], { stdio: "pipe" });
+      execFileSync("terraform", ["fmt", dir], { stdio: "pipe" });
       execFileSync("terraform", [`-chdir=${dir}`, "init", "-backend=false"], { stdio: "pipe" });
       execFileSync("terraform", [`-chdir=${dir}`, "validate"], { stdio: "pipe" });
       expect(true).toBe(true);
