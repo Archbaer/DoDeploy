@@ -30,6 +30,15 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
   const sharedBy = new Map<string, string[]>();
 
   for (const [serviceName, service] of Object.entries(compose.services)) {
+    if (service.profiles.length > 0) {
+      diagnostics.push({
+        stage: "normalize",
+        severity: "warning",
+        message: `service "${serviceName}" has profiles [${service.profiles.join(", ")}] and is ignored; only default-profile services are deployed`,
+      });
+      continue;
+    }
+
     const image = service.image ?? undefined;
     const datastore = image !== undefined ? datastoreEngine(image) : undefined;
 
@@ -96,6 +105,21 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
       ...(healthcheck !== undefined ? { healthcheck } : {}),
       dependsOn: service.dependsOn ?? [],
     });
+
+    for (const volume of service.volumes ?? []) {
+      const source = typeof volume === "string" ? volume.split(":")[0] : volume.source;
+      const type = typeof volume === "string" ? undefined : volume.type;
+      if (
+        source &&
+        (type === "bind" || compose.volumes === undefined || !(source in compose.volumes))
+      ) {
+        diagnostics.push({
+          stage: "normalize",
+          severity: "warning",
+          message: `service "${serviceName}": volume "${source}" is not a named Compose volume; bind mounts are not mapped to cloud storage`,
+        });
+      }
+    }
 
     for (const ref of namedVolumeRefs({ ...service, volumes: service.volumes ?? [] })) {
       sharedBy.set(ref, [...(sharedBy.get(ref) ?? []), serviceName]);
