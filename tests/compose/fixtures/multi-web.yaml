@@ -1,0 +1,10 @@
+name: multi-web
+services:
+  frontend:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+  backend:
+    image: api:1
+    ports:
+      - '8080:8080'
