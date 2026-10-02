@@ -113,7 +113,7 @@ Pre-commit hooks (lefthook) run biome + typecheck automatically.
 - Strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
 - Biome lint + format, TDD (vitest, coverage thresholds)
 - All dependencies **pinned to exact versions** (`.npmrc` `save-exact`,
-  `scripts/check-exact-versions.mjs` enforced in CI) — see [DEPENDENCIES.md](./DEPENDENCIES.md)
+  `scripts/check-exact-versions.mjs` enforced in CI).
 - CI: `npm ci`, biome, typecheck, tests (incl. `terraform fmt/init/validate` on
   generated HCL for all three providers), build, `audit-ci` (high+),
   [OSV-Scanner](https://google.github.io/osv-scanner/), Dependabot

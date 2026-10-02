@@ -9,3 +9,7 @@ coverage/
 .DS_Store
 dodeploy-infra/
 
+# Stale / auto-generated project files
+DEPENDENCIES.md
+.github/pr-phase-*.md
+
