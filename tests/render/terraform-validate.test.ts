@@ -19,7 +19,9 @@ const terraformAvailable = (() => {
 
 describe.skipIf(!terraformAvailable)("terraform validate (integration)", () => {
   for (const [id, provider] of Object.entries(providers)) {
-    it(`${id}: generated fileset passes terraform fmt, init and validate`, () => {
+    it(`${id}: generated fileset passes terraform fmt, init and validate`, {
+      timeout: 180_000,
+    }, () => {
       const rulesResult = applyRules(dbIR, provider.rules);
       if (!rulesResult.ok) throw new Error("rules failed");
       const { files } = provider.render(rulesResult.value);
