@@ -11,9 +11,8 @@ docker-compose.yaml ──► PARSE ──► IR (Zod) ──► RULES ──►
 ```
 
 > Status: functional end-to-end (Phases 0–7). `generate` produces validated Terraform
-> (`terraform validate` runs in CI for all three providers); stateful/VM services and
-> costly abstractions (Filestore, Cosmos DB) are rendered as explicit `TODO(dodeploy)`
-> blocks instead of being faked.
+> (`terraform validate` runs in CI for all three providers); unsupported or costly
+> abstractions are rendered as explicit `TODO(dodeploy)` blocks instead of being faked.
 
 ## Quickstart
 
@@ -34,8 +33,35 @@ maps, per provider:
 | web/worker services | ECS Fargate + ALB | Cloud Run | Container Apps |
 | postgres / mysql | RDS | Cloud SQL | PostgreSQL Flexible Server |
 | redis | ElastiCache | Memorystore | Azure Cache for Redis |
-| volumes | EFS | *(deferred: TODO block)* | Files (Storage Share) |
+| volumes | EFS | *(deferred — see below)* | Files (Storage Share) |
 | static assets / uploads | S3 + private ACL | GCS | Storage Containers |
+
+### Supported deployment subset
+
+`generate` fully renders:
+
+- Stateless web/worker containers (ECS Fargate / Cloud Run / Container Apps)
+- Managed Postgres, MySQL, and Redis
+- Object storage (S3 / GCS / Blob)
+- Shared file storage where supported (EFS / Azure Files)
+- Service discovery, secrets recommendations, and security-group wiring
+
+Explicitly deferred (rendered as `# TODO(dodeploy)` blocks):
+
+- Stateful / VM services (EC2/ASG, GCE, VMSS)
+- GCP Filestore shared volumes
+- MongoDB on GCP (no native managed service) and Azure Cosmos DB (costly abstraction)
+- Compose `build` contexts (build & push an image, then set the generated `*_image` variable)
+
+Use `dodeploy analyze` to see the same breakdown before generating.
+
+### Before `terraform apply`
+
+- Set `TF_VAR_db_password` (all managed databases require it).
+- For any `build` context, build the image and set the matching `*_image` variable.
+- Search the generated files for `TODO(dodeploy)` and resolve or remove them.
+- Review region, instance sizes, and scaling limits for your environment.
+- Confirm that public ingress (ALB / Cloud Run ingress / Container App ingress) matches your security model.
 
 No compose file? Drop the path and `generate` runs an interactive interview
 (`@clack/prompts`) to fill everything in:
