@@ -1,6 +1,6 @@
 {
   "name": "dodeploy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn a docker-compose.yaml into deployable Terraform for AWS, GCP and Azure",
   "type": "module",
   "bin": {

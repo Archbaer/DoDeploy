@@ -32,12 +32,13 @@ describe("banner", () => {
 });
 
 describe("cli", () => {
-  it("--help exits 0 and lists the stub commands", async () => {
+  it("--help exits 0 and lists the commands", async () => {
     const { code, stdout } = await runCli(["--help"]);
     expect(code).toBe(0);
     expect(stdout).toContain("Usage: dodeploy");
     expect(stdout).toContain("analyze");
     expect(stdout).toContain("generate");
+    expect(stdout).toContain("doctor");
   });
 
   it("bare invocation prints the banner and help, exits 0", async () => {
@@ -56,5 +57,61 @@ describe("cli", () => {
     const { code, stdout } = await runCli(["--version"]);
     expect(code).toBe(0);
     expect(stdout.trim()).toBe(pkg.version);
+  });
+});
+
+describe("commands", () => {
+  it("analyze reports findings and recommendations for a provider", async () => {
+    const { code, stdout } = await runCli([
+      "analyze",
+      "tests/compose/fixtures/web-db-redis.yaml",
+      "--provider",
+      "aws",
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("Recommendations");
+    expect(stdout).toContain("aws");
+  });
+
+  it("analyze exits 1 for a missing compose file", async () => {
+    const { code, stdout, stderr } = await runCli(["analyze", "tests/compose/fixtures/nope.yaml"]);
+    expect(code).toBe(1);
+    expect(stdout + stderr).toContain("compose");
+  });
+
+  it("generate --no-interview writes a Terraform fileset", async () => {
+    const { mkdtempSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const out = mkdtempSync(join(tmpdir(), "dd-cli-gen-"));
+    const { code, stdout } = await runCli([
+      "generate",
+      "tests/compose/fixtures/web-db-redis.yaml",
+      "--provider",
+      "gcp",
+      "--out",
+      out,
+      "--no-interview",
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("providers.tf");
+    expect(existsSync(join(out, "compute.tf"))).toBe(true);
+  });
+
+  it("generate exits 1 without --provider in non-interactive mode", async () => {
+    const { code, stdout, stderr } = await runCli([
+      "generate",
+      "tests/compose/fixtures/web-db-redis.yaml",
+      "--no-interview",
+    ]);
+    expect(code).toBe(1);
+    expect(stdout + stderr).toContain("provider");
+  });
+
+  it("doctor exits 0 on a valid compose file (terraform check is advisory)", async () => {
+    const { code, stdout } = await runCli(["doctor", "tests/compose/fixtures/web-db-redis.yaml"]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("Terraform CLI");
+    expect(stdout).toContain("Compose file");
   });
 });
