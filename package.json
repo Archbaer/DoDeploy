@@ -12,6 +12,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "esbuild": "0.28.2"
+  },
   "scripts": {
     "dev": "tsx src/bin.ts",
     "build": "tsup",
