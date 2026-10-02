@@ -27,7 +27,10 @@ export const awsRules: Rule[] = [
   ecrRule,
 ];
 
+import { renderAws } from "./render.js";
+
 export const awsRulePack: CloudProvider = {
   id: "aws",
   rules: awsRules,
+  render: renderAws,
 };

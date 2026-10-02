@@ -32,7 +32,10 @@ export const gcpRules: Rule[] = [
   artifactRegistryRule,
 ];
 
+import { renderGcp } from "./render.js";
+
 export const gcpRulePack: CloudProvider = {
   id: "gcp",
   rules: gcpRules,
+  render: renderGcp,
 };

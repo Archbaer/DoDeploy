@@ -36,7 +36,10 @@ export const azureRules: Rule[] = [
   acrRule,
 ];
 
+import { renderAzure } from "./render.js";
+
 export const azureRulePack: CloudProvider = {
   id: "azure",
   rules: azureRules,
+  render: renderAzure,
 };
