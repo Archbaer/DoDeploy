@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ghcr.io/acme/app:1.0.0
+    ports:
+      - "3000"
+    volumes:
+      - uploads:/data/uploads
+  worker:
+    image: ghcr.io/acme/worker:1.0.0
+    volumes:
+      - uploads:/data/uploads
+volumes:
+  uploads: {}

@@ -1,0 +1,10 @@
+name: shop
+services:
+  web:
+    image: ghcr.io/acme/web:1.0.0
+    ports:
+      - "80:3000"
+    environment:
+      NODE_ENV: production
+      API_TOKEN: supersecret
+    restart: unless-stopped
