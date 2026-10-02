@@ -1,0 +1,15 @@
+services:
+  frontend:
+    image: ghcr.io/acme/frontend:1.0.0
+    ports:
+      - "80:80"
+    networks:
+      - edge
+      - internal
+  backend:
+    image: ghcr.io/acme/backend:1.0.0
+    networks:
+      - internal
+networks:
+  edge: {}
+  internal: {}
