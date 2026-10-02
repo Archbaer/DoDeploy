@@ -80,7 +80,7 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain("TODO(dodeploy)");
     expect(files["data.tf"]).toContain('resource "google_sql_database_instance" "legacy"');
     expect(files["data.tf"]).toContain("MYSQL_8_0");
-    expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL");
+    expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL_ONLY");
   });
 
   it("renders Azure storage shares/containers and defers Cosmos DB with a diagnostic", () => {

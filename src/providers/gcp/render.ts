@@ -84,7 +84,7 @@ const computeSection = (ir: EnrichedIR): string =>
       container_port = ${publicPort.container}
     }`
           : "";
-      const ingress = u.kind === "web" ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL";
+      const ingress = u.kind === "web" ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL_ONLY";
       const envVars = Object.entries(u.env)
         .filter(([key]) => !u.secrets.includes(key))
         .map(([key, value]) => `        { name = ${quote(key)}, value = ${quote(value)} },`)
