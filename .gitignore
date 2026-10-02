@@ -1,6 +1,7 @@
 # Agents
 AGENTS.md
 .opencode
+opencode.json
 
 node_modules/
 dist/
