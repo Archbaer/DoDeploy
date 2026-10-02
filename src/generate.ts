@@ -26,6 +26,7 @@ export type GenerateResult =
       filesWritten: string[];
       diagnostics: Diagnostic[];
       recommendations: Recommendation[];
+      deferred: string[];
     }
   | { ok: false; diagnostics: Diagnostic[] };
 
@@ -107,11 +108,17 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
     };
   }
 
+  const deferred = Object.values(rendered.files)
+    .flatMap((content) => content.split("\n"))
+    .filter((line) => line.includes("TODO(dodeploy)"))
+    .map((line) => line.trim());
+
   return {
     ok: true,
     outDir: options.outDir,
     filesWritten: writeResult.written,
     diagnostics,
     recommendations: rulesResult.value.recommendations,
+    deferred,
   };
 }
