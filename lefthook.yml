@@ -1,0 +1,7 @@
+pre-commit:
+  commands:
+    biome:
+      run: npx biome ci .
+    typecheck:
+      run: npx tsc --noEmit
+

@@ -1,0 +1,49 @@
+{
+  "name": "dodeploy",
+  "version": "0.1.0",
+  "description": "Turn a docker-compose.yaml into deployable Terraform for AWS, GCP and Azure",
+  "type": "module",
+  "bin": {
+    "dodeploy": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "esbuild": "0.28.2"
+  },
+  "scripts": {
+    "dev": "tsx src/bin.ts",
+    "build": "tsup",
+    "start": "node dist/bin.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check:versions": "node scripts/check-exact-versions.mjs",
+    "ci": "npm run check:versions && npm run lint && npm run typecheck && npm run test:coverage && npm run build"
+  },
+  "dependencies": {
+    "chalk": "6.0.1",
+    "commander": "15.0.0",
+    "figlet": "1.12.0",
+    "gradient-string": "3.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/figlet": "1.7.0",
+    "@types/node": "26.6.4",
+    "@vitest/coverage-v8": "5.0.3",
+    "audit-ci": "7.1.0",
+    "lefthook": "2.1.16",
+    "tsup": "8.5.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
