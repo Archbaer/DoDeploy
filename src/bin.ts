@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 import { run } from "./cli.js";
 
-run(process.argv);
+await run(process.argv);
