@@ -114,4 +114,24 @@ describe("commands", () => {
     expect(stdout).toContain("Terraform CLI");
     expect(stdout).toContain("Compose file");
   });
+
+  it("generate exits 1 when the output path is unwritable", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "dd-cli-outfile-"));
+    const out = join(dir, "outfile");
+    writeFileSync(out, "not a directory");
+    const { code, stdout, stderr } = await runCli([
+      "generate",
+      "tests/compose/fixtures/web-db-redis.yaml",
+      "--provider",
+      "aws",
+      "--no-interview",
+      "--out",
+      out,
+    ]);
+    expect(code).toBe(1);
+    expect(stdout + stderr).toContain("output directory");
+  });
 });

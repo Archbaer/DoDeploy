@@ -96,12 +96,21 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
   const rendered = pack.render(rulesResult.value);
   diagnostics.push(...rendered.diagnostics);
 
-  writeTfFileset(options.outDir, rendered.files);
+  const writeResult = writeTfFileset(options.outDir, rendered.files);
+  if (!writeResult.ok) {
+    return {
+      ok: false,
+      diagnostics: [
+        ...diagnostics,
+        { stage: "write", severity: "error", message: writeResult.message },
+      ],
+    };
+  }
 
   return {
     ok: true,
     outDir: options.outDir,
-    filesWritten: Object.keys(rendered.files).sort(),
+    filesWritten: writeResult.written,
     diagnostics,
     recommendations: rulesResult.value.recommendations,
   };

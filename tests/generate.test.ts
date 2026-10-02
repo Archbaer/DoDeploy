@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -121,5 +121,34 @@ describe("generateProject", async () => {
     expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
     expect(readFileSync(join(out, "data.tf"), "utf8")).toContain("aws_db_instance");
     expect(driver.exhausted()).toBe(true);
+  });
+
+  it("fails cleanly when the output directory cannot be created", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dd-gen-outfile-"));
+    const out = join(dir, "outfile");
+    writeFileSync(out, "not a directory");
+    const result = await generateProject({
+      composePath: WEB_DB_REDIS,
+      provider: "aws",
+      outDir: out,
+      interview: false,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.some((d) => d.stage === "write")).toBe(true);
+  });
+
+  it("fails cleanly on a partial write", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-partial-"));
+    mkdirSync(join(out, "providers.tf"));
+    const result = await generateProject({
+      composePath: WEB_DB_REDIS,
+      provider: "aws",
+      outDir: out,
+      interview: false,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.some((d) => d.stage === "write")).toBe(true);
   });
 });
