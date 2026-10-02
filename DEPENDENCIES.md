@@ -12,6 +12,7 @@ and `package-lock.json` is committed — CI installs with `npm ci`.
 | `chalk` | 6.0.1 | Terminal colors for UI/report output | ANSI codes by hand (chalk handles TTY detection/Windows) |
 | `figlet` | 1.12.0 | ASCII-art banner | Hand-drawn strings (no per-title flexibility) |
 | `gradient-string` | 3.0.0 | Gradient coloring for the banner | `ink` (whole React runtime, far too heavy for a CLI) |
+| `zod` | 4.6.5 | Schema validation for the compose model, IR, and interview answers — single source of truth for every stage boundary | `ajv` (JSON-schema only, weaker DX), `valibot` (viable, but zod's ecosystem & inference maturity won) |
 
 ## Development
 
