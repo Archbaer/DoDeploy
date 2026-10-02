@@ -96,7 +96,7 @@ export const enrichedIRSchema = projectIRSchema.extend({
 });
 
 export const diagnosticSchema = z.object({
-  stage: z.enum(["parse", "normalize", "rules", "interview", "render"]),
+  stage: z.enum(["compose", "parse", "normalize", "rules", "interview", "render"]),
   severity: z.enum(["info", "warning", "error"]),
   message: z.string().min(1),
   ruleId: z.string().optional(),
