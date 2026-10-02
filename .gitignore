@@ -1,0 +1,10 @@
+# Agents
+AGENTS.md
+.opencode
+
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+dodeploy-infra/

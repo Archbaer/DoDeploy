@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  quality:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (locked)
+        run: npm ci
+
+      - name: Enforce exact dependency versions
+        run: node scripts/check-exact-versions.mjs
+
+      - name: Lint & format
+        run: npx biome ci .
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test with coverage
+        run: npx vitest run --coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test built CLI
+        run: node dist/bin.js --help
+
+      - name: Audit dependencies (high+)
+        run: npx audit-ci --audit-level=high
+
+  scan:
+    name: OSV vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan lockfile & source
+        uses: google/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+            --recursive
+            ./

@@ -1,0 +1,7 @@
+pre-commit:
+  commands:
+    biome:
+      run: npx biome check --files-ignore-unknown=true {staged_files}
+    typecheck:
+      run: npx tsc --noEmit
+
