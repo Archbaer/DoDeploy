@@ -1,5 +1,4 @@
 # Agents
-AGENTS.md
 .opencode
 opencode.json
 
@@ -9,3 +8,4 @@ coverage/
 *.log
 .DS_Store
 dodeploy-infra/
+
