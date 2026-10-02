@@ -64,4 +64,39 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain('resource "azurerm_redis_cache" "cache"');
     expect(files["network.tf"]).toContain('resource "azurerm_virtual_network"');
   });
+
+  it("reports deferred GCP resources as diagnostics without failing", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [{ name: "w", source: "compose", kind: "worker", image: "img:1" }],
+      datastores: [
+        { name: "docs", engine: "mongodb", detected: true },
+        { name: "legacy", engine: "mysql", version: "8", detected: true },
+      ],
+      storage: [{ name: "shared", kind: "shared-volume", source: "compose", sharedBy: ["w"] }],
+    });
+    const { files, diagnostics } = gcpRulePack.render(enriched(gcpRulePack.rules, ir));
+    expect(diagnostics.length).toBeGreaterThanOrEqual(2);
+    expect(files["data.tf"]).toContain("TODO(dodeploy)");
+    expect(files["data.tf"]).toContain('resource "google_sql_database_instance" "legacy"');
+    expect(files["data.tf"]).toContain("MYSQL_8_0");
+    expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL");
+  });
+
+  it("renders Azure storage shares/containers and defers Cosmos DB with a diagnostic", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [{ name: "w", source: "compose", kind: "worker", image: "img:1" }],
+      datastores: [{ name: "docs", engine: "mongodb", detected: true }],
+      storage: [
+        { name: "shared", kind: "shared-volume", source: "compose", sharedBy: ["w"] },
+        { name: "assets", kind: "static-assets", source: "compose", sharedBy: [] },
+      ],
+    });
+    const { files, diagnostics } = azureRulePack.render(enriched(azureRulePack.rules, ir));
+    expect(diagnostics.some((d) => d.message.includes("Cosmos"))).toBe(true);
+    expect(files["data.tf"]).toContain('resource "azurerm_storage_share" "shared"');
+    expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
+    expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
+  });
 });

@@ -63,7 +63,7 @@ describe("aws renderer", () => {
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
     expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "api"');
     expect(files["data.tf"]).toContain('resource "aws_db_instance" "db"');
-    expect(files["data.tf"]).toContain('engine = "postgres"');
+    expect(files["data.tf"]).toContain('engine               = "postgres"');
     expect(files["data.tf"]).toContain('resource "aws_elasticache_cluster" "cache"');
   });
 
@@ -82,5 +82,37 @@ describe("aws renderer", () => {
   it("snapshot: full AWS output for the standard fixture", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files).toMatchSnapshot();
+  });
+
+  it("covers docdb, s3, efs, builder variables, env and worker-only services", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "big" },
+      compute: [
+        {
+          name: "api",
+          source: "compose",
+          kind: "web",
+          buildContext: "./api",
+          ports: [{ container: 3000, host: 80, public: true }],
+          env: { LOG_LEVEL: "debug" },
+        },
+        { name: "jobs", source: "compose", kind: "worker", image: "img:2" },
+      ],
+      datastores: [{ name: "docs", engine: "mongodb", detected: true }],
+      storage: [
+        { name: "uploads", kind: "uploads", source: "compose", sharedBy: [] },
+        { name: "data", kind: "local-volume", source: "compose", sharedBy: [] },
+      ],
+    });
+    const { files, diagnostics } = awsRulePack.render(enriched(ir));
+    expect(diagnostics).toEqual([]);
+    expect(files["data.tf"]).toContain('resource "aws_docdb_cluster" "docs"');
+    expect(files["data.tf"]).toContain('resource "aws_s3_bucket" "uploads"');
+    expect(files["data.tf"]).toContain('resource "aws_efs_file_system" "data"');
+    expect(files["variables.tf"]).toContain('variable "api_image"');
+    expect(files["compute.tf"]).toContain("LOG_LEVEL");
+    expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "jobs"');
+    expect(files["outputs.tf"]).toContain('output "bucket_uploads"');
+    expect(files["outputs.tf"]).toContain('output "db_docs_endpoint"');
   });
 });

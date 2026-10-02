@@ -1,11 +1,24 @@
-export function tfName(_raw: string): string {
-  throw new Error("not implemented");
+/** Sanitize an arbitrary service/volume name into a valid Terraform resource label. */
+export function tfName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
-export function quote(_value: string): string {
-  throw new Error("not implemented");
+/** Quote a string as an HCL string literal. */
+export function quote(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-export function block(_type: string, _labels: string[], _attrs: Record<string, string>): string {
-  throw new Error("not implemented");
+/**
+ * Render a flat HCL block. Attribute values must be valid HCL expressions —
+ * use `quote()` for plain strings.
+ */
+export function block(type: string, labels: string[], attrs: Record<string, string>): string {
+  const header = [type, ...labels.map(quote)].join(" ");
+  const body = Object.entries(attrs)
+    .map(([key, value]) => `  ${key} = ${value}`)
+    .join("\n");
+  return `${header} {\n${body}\n}\n`;
 }

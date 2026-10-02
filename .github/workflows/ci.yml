@@ -31,6 +31,11 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Install Terraform (for HCL validation tests)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
       - name: Test with coverage
         run: npx vitest run --coverage
 

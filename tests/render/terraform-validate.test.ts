@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -28,8 +28,8 @@ describe.skipIf(!terraformAvailable)("terraform validate (integration)", () => {
       writeTfFileset(dir, files);
 
       execFileSync("terraform", ["fmt", "-check", dir], { stdio: "pipe" });
-      execFileSync("terraform", ["-chdir=" + dir, "init", "-backend=false"], { stdio: "pipe" });
-      execFileSync("terraform", ["-chdir=" + dir, "validate"], { stdio: "pipe" });
+      execFileSync("terraform", [`-chdir=${dir}`, "init", "-backend=false"], { stdio: "pipe" });
+      execFileSync("terraform", [`-chdir=${dir}`, "validate"], { stdio: "pipe" });
       expect(true).toBe(true);
     });
   }
