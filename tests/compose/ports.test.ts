@@ -65,6 +65,16 @@ describe("toPort", () => {
     expect(parse("abc")).toBeUndefined();
     expect(diagnostics[0]?.message).toContain("abc");
   });
+
+  it("parses long syntax without published port and udp short syntax", () => {
+    expect(parse({ target: 53 })).toEqual({ container: 53, protocol: "tcp", public: false });
+    expect(parse("53/udp")).toMatchObject({ container: 53, protocol: "udp", public: false });
+  });
+
+  it("ignores a non-integer host port and keeps the container port", () => {
+    expect(parse("abc:3000")).toMatchObject({ container: 3000, public: false });
+    expect(diagnostics).toHaveLength(0);
+  });
 });
 
 describe("serviceEnv", () => {
