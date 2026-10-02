@@ -87,15 +87,12 @@ const computeSection = (ir: EnrichedIR): string =>
       const ingress = u.kind === "web" ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL_ONLY";
       const envVars = Object.entries(u.env)
         .filter(([key]) => !u.secrets.includes(key))
-        .map(([key, value]) => `        { name = ${quote(key)}, value = ${quote(value)} },`)
+        .map(
+          ([key, value]) =>
+            `    env {\n      name  = ${quote(key)}\n      value = ${quote(value)}\n    }`,
+        )
         .join("\n");
-      const env =
-        envVars.length > 0
-          ? `
-      env = [
-${envVars}
-      ]`
-          : "";
+      const env = envVars.length > 0 ? `\n${envVars}` : "";
       return `resource "google_cloud_run_v2_service" "${label}" {
   name     = ${quote(label)}
   location = var.region
