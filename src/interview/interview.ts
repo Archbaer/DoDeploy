@@ -38,6 +38,7 @@ const STORAGE_OPTIONS = [
 export async function runInterview(
   ir: ProjectIR,
   driver: InterviewDriver,
+  provider?: ProjectIR["meta"]["provider"],
 ): Promise<InterviewResult> {
   const diagnostics: Diagnostic[] = [];
   let changed = false;
@@ -47,7 +48,9 @@ export async function runInterview(
   const datastores = [...ir.datastores];
   const storage = [...ir.storage];
 
-  if (meta.source === "interview") {
+  if (provider !== undefined) {
+    meta.provider = provider;
+  } else if (meta.source === "interview") {
     meta.provider = await driver.select("Target cloud provider?", PROVIDER_OPTIONS);
     changed = true;
   }

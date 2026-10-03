@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { generateProject } from "../src/generate.js";
+import type { InterviewDriver } from "../src/interview/driver.js";
 import { ScriptedDriver } from "../src/interview/index.js";
 
 const FIXTURES = join(process.cwd(), "tests/compose/fixtures");
@@ -18,6 +19,34 @@ const GENERATED_FILES = [
 ];
 
 describe("generateProject", async () => {
+  it.each([
+    ["gcp", "europe-west1", "google_cloud_run_v2_service"],
+    ["azure", "westeurope", "azurerm_container_app"],
+  ] as const)(
+    "preserves explicit %s provider and skips provider interview",
+    async (provider, region, marker) => {
+      const out = mkdtempSync(join(tmpdir(), "dd-gen-provider-"));
+      const driver = new ScriptedDriver([region, "containers", "api", "web", false, false]);
+      const interviewDriver: InterviewDriver = driver;
+      const select = interviewDriver.select.bind(driver);
+      const prompts = vi
+        .spyOn(interviewDriver, "select")
+        .mockImplementation((message, options) =>
+          message === "Target cloud provider?"
+            ? Promise.resolve("aws" as never)
+            : select(message, options),
+        );
+      const result = await generateProject({ provider, outDir: out, interview: true, driver });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain(marker);
+      expect(driver.exhausted()).toBe(true);
+      expect(prompts.mock.calls.some(([message]) => message === "Target cloud provider?")).toBe(
+        false,
+      );
+    },
+  );
+
   it("runs compose → rules → render for AWS and writes the fileset", async () => {
     const out = mkdtempSync(join(tmpdir(), "dd-gen-aws-"));
     const result = await generateProject({
@@ -111,7 +140,6 @@ describe("generateProject", async () => {
     ]);
     const result = await generateProject({
       projectName: "demo",
-      provider: "aws",
       outDir: out,
       interview: true,
       driver,

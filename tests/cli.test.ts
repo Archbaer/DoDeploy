@@ -7,7 +7,7 @@ const runCli = (args: string[]): Promise<{ code: number; stdout: string; stderr:
     execFile(
       process.execPath,
       ["--import", "tsx", "src/bin.ts", ...args],
-      { cwd: process.cwd() },
+      { cwd: process.cwd(), timeout: 10000 },
       (error, stdout, stderr) => {
         const code =
           error && typeof (error as { code?: number }).code === "number"
@@ -61,6 +61,17 @@ describe("cli", () => {
 });
 
 describe("commands", () => {
+  it.each(["digitalocean", "toString", "__proto__"])(
+    "rejects unsupported provider %s before interview",
+    async (provider) => {
+      const { code, stdout, stderr } = await runCli(["generate", "--provider", provider]);
+      expect(code).toBe(1);
+      expect(stdout + stderr).toContain(`unknown provider: ${provider} (expected aws|gcp|azure)`);
+      expect(stdout + stderr).not.toContain("Target cloud provider?");
+    },
+    15000,
+  );
+
   it("analyze reports findings and recommendations for a provider", async () => {
     const { code, stdout } = await runCli([
       "analyze",
