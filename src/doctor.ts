@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { parseCompose } from "./compose/index.js";
+import { normalizeCompose, parseCompose } from "./compose/index.js";
 
 export interface DoctorCheck {
   id: string;
@@ -70,6 +70,18 @@ export function runDoctor(options: DoctorOptions): DoctorCheck[] {
         ok: false,
         critical: true,
         detail: `invalid: ${first?.message ?? "unknown parse error"}`,
+      });
+      return checks;
+    }
+    const normalized = normalizeCompose(parsed.value);
+    if (!normalized.ok) {
+      const error = normalized.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+      checks.push({
+        id: "compose",
+        label: "Compose file",
+        ok: false,
+        critical: true,
+        detail: `invalid: ${error?.message ?? "unknown normalization error"}`,
       });
       return checks;
     }

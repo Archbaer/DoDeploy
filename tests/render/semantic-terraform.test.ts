@@ -51,7 +51,7 @@ describe("semantic render + terraform validate", () => {
         expect(files["compute.tf"]).toContain("task_definition = aws_ecs_task_definition.api.arn");
         expect(files["network.tf"]).toMatch(/aws_lb_target_group[\s\S]{0,10}api/);
         expect(files["network.tf"]).toContain("target_group_arn = aws_lb_target_group.api.arn");
-        expect(files["network.tf"]).toContain("aws_security_group.api.id");
+        expect(files["network.tf"]).toContain("aws_security_group.service_api.id");
         expect(files["data.tf"]).toMatch(/aws_db_instance[\s\S]{0,10}db/);
         expect(files["data.tf"]).toMatch(/aws_elasticache_cluster[\s\S]{0,10}cache/);
         expect(files["outputs.tf"]).toContain("aws_lb.main.dns_name");
@@ -100,6 +100,7 @@ describe("semantic render + terraform validate", () => {
         expect(files["network.tf"]).toContain(
           "target_group_arn = aws_lb_target_group.frontend.arn",
         );
+        expect(files["network.tf"]).toContain("target_group_arn = aws_lb_target_group.backend.arn");
       } else if (provider === "gcp") {
         expect(files["compute.tf"]).toMatch(/google_cloud_run_v2_service[\s\S]{0,10}frontend/);
         expect(files["compute.tf"]).toMatch(/google_cloud_run_v2_service[\s\S]{0,10}backend/);
@@ -128,14 +129,15 @@ describe("semantic render + terraform validate", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const files = readFiles(out);
+      expect(files["data.tf"]).toContain("TODO(dodeploy)");
+      expect(result.diagnostics.some((d) => d.message.includes('volume "uploads"'))).toBe(true);
       if (provider === "aws") {
-        expect(files["data.tf"]).toMatch(/aws_efs_file_system[\s\S]{0,10}uploads/);
+        expect(files["data.tf"]).not.toContain('resource "aws_efs_file_system"');
       } else if (provider === "gcp") {
-        expect(files["data.tf"]).toContain("TODO(dodeploy)");
         expect(result.diagnostics.some((d) => d.message.includes("Filestore"))).toBe(true);
       } else {
-        expect(files["data.tf"]).toMatch(/azurerm_storage_share[\s\S]{0,10}uploads/);
-        expect(files["data.tf"]).toMatch(/azurerm_storage_account[\s\S]{0,10}main/);
+        expect(files["data.tf"]).not.toContain('resource "azurerm_storage_share"');
+        expect(files["data.tf"]).not.toContain('resource "azurerm_storage_account"');
       }
       if (terraformAvailable) runTerraformValidate(out);
     },

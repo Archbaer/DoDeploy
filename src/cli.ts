@@ -24,7 +24,7 @@ const analyzeCommand = new Command("analyze")
   .option("--provider <id>", "target provider (aws|gcp|azure)", "aws")
   .action((path: string | undefined, options: { provider: string }) => {
     const pack = providers[options.provider as ProviderId];
-    if (pack === undefined) {
+    if (!Object.hasOwn(providers, options.provider) || pack === undefined) {
       console.error(`unknown provider: ${options.provider} (expected aws|gcp|azure)`);
       process.exitCode = 1;
       return;
@@ -93,7 +93,7 @@ const generateCommand = new Command("generate")
       options: { provider?: string; out: string; name?: string; interview: boolean },
     ) => {
       const provider = options.provider as ProviderId | undefined;
-      if (provider !== undefined && providers[provider] === undefined) {
+      if (provider !== undefined && !Object.hasOwn(providers, provider)) {
         console.error(`unknown provider: ${options.provider} (expected aws|gcp|azure)`);
         process.exitCode = 1;
         return;

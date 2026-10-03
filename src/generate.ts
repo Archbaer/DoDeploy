@@ -76,7 +76,7 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
     if (options.driver === undefined) {
       return fail("interview requested but no interview driver is available");
     }
-    const interview = await runInterview(ir, options.driver);
+    const interview = await runInterview(ir, options.driver, options.provider);
     if (!interview.ok) {
       return { ok: false, diagnostics: interview.diagnostics };
     }

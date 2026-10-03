@@ -83,7 +83,7 @@ describe("azure renderer", () => {
     expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL_ONLY");
   });
 
-  it("renders Azure storage shares/containers and defers Cosmos DB with a diagnostic", () => {
+  it("renders Azure object storage and explicitly defers volume mounts and Cosmos DB", () => {
     const ir = projectIRSchema.parse({
       meta: { name: "x" },
       compute: [{ name: "w", source: "compose", kind: "worker", image: "img:1" }],
@@ -95,7 +95,9 @@ describe("azure renderer", () => {
     });
     const { files, diagnostics } = azureRulePack.render(enriched(azureRulePack.rules, ir));
     expect(diagnostics.some((d) => d.message.includes("Cosmos"))).toBe(true);
-    expect(files["data.tf"]).toContain('resource "azurerm_storage_share" "shared"');
+    expect(files["data.tf"]).not.toContain('resource "azurerm_storage_share"');
+    expect(files["data.tf"]).toContain('TODO(dodeploy): section "storage-shared"');
+    expect(diagnostics.some((d) => d.message.includes('volume "shared"'))).toBe(true);
     expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
     expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
   });
