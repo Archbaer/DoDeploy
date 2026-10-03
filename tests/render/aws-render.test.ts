@@ -84,7 +84,7 @@ describe("aws renderer", () => {
     expect(files).toMatchSnapshot();
   });
 
-  it("covers docdb, s3, efs, builder variables, env and worker-only services", () => {
+  it("covers docdb, s3, deferred volumes, builder variables, env and worker-only services", () => {
     const ir = projectIRSchema.parse({
       meta: { name: "big" },
       compute: [
@@ -105,10 +105,13 @@ describe("aws renderer", () => {
       ],
     });
     const { files, diagnostics } = awsRulePack.render(enriched(ir));
-    expect(diagnostics).toEqual([]);
+    expect(
+      diagnostics.some((d) => d.message.includes("data") && d.message.includes("mount paths")),
+    ).toBe(true);
     expect(files["data.tf"]).toContain('resource "aws_docdb_cluster" "docs"');
     expect(files["data.tf"]).toContain('resource "aws_s3_bucket" "uploads"');
-    expect(files["data.tf"]).toContain('resource "aws_efs_file_system" "data"');
+    expect(files["data.tf"]).toContain('volume "data" deferred');
+    expect(files["data.tf"]).not.toContain("aws_efs_file_system");
     expect(files["variables.tf"]).toContain('variable "api_image"');
     expect(files["compute.tf"]).toContain("LOG_LEVEL");
     expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "jobs"');
