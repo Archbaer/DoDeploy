@@ -92,15 +92,12 @@ const computeSection = (ir: EnrichedIR): string =>
           : `var.${label}_image # TODO(dodeploy): build & push this image (see ACR recommendation)`;
       const envVars = Object.entries(u.env)
         .filter(([key]) => !u.secrets.includes(key))
-        .map(([key, value]) => `        { name = ${quote(key)}, value = ${quote(value)} },`)
+        .map(
+          ([key, value]) =>
+            `      env {\n        name  = ${quote(key)}\n        value = ${quote(value)}\n      }`,
+        )
         .join("\n");
-      const env =
-        envVars.length > 0
-          ? `
-      env = [
-${envVars}
-      ]`
-          : "";
+      const env = envVars.length > 0 ? `\n${envVars}` : "";
       const ingress =
         u.kind === "web" && publicPort !== undefined
           ? `

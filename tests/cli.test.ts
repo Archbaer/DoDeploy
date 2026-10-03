@@ -134,4 +134,23 @@ describe("commands", () => {
     expect(code).toBe(1);
     expect(stdout + stderr).toContain("output directory");
   });
+
+  it("generate lists deferred items for build-context services", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const out = mkdtempSync(join(tmpdir(), "dd-cli-deferred-"));
+    const { code, stdout } = await runCli([
+      "generate",
+      "tests/compose/fixtures/build-only.yaml",
+      "--provider",
+      "aws",
+      "--no-interview",
+      "--out",
+      out,
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("TODO(dodeploy)");
+    expect(stdout).toContain("item(s) were deferred");
+  });
 });

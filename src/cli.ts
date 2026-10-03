@@ -120,8 +120,12 @@ const generateCommand = new Command("generate")
         console.log(`\n${result.diagnostics.length} note(s) from generation:`);
         printDiagnostics(result.diagnostics);
       }
-      if (result.diagnostics.some((d) => d.message.includes("TODO"))) {
-        console.log("\nSome items were deferred — search the output for TODO(dodeploy).");
+      if (result.deferred.length > 0) {
+        console.log(`\n${result.deferred.length} item(s) were deferred:`);
+        for (const item of result.deferred) {
+          console.log(`  • ${item}`);
+        }
+        console.log("\nReview the TODO items before running terraform apply.");
       }
       console.log(`\nNext: cd ${result.outDir} && terraform init && terraform plan`);
     },
