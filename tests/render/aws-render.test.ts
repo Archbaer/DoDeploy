@@ -58,6 +58,15 @@ describe("aws renderer", () => {
     );
   });
 
+  it("includes ec2.tf for ec2-targeted workloads", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [{ name: "web", source: "compose", kind: "web", image: "nginx", target: "ec2" }],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(Object.keys(files).sort()).toContain("ec2.tf");
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
@@ -117,5 +126,27 @@ describe("aws renderer", () => {
     expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "jobs"');
     expect(files["outputs.tf"]).toContain('output "bucket_uploads"');
     expect(files["outputs.tf"]).toContain('output "db_docs_endpoint"');
+  });
+
+  it("renders ec2-targeted services as a single EC2 box and no ECS resources", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          target: "ec2",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+        { name: "jobs", source: "compose", kind: "worker", image: "worker:v1", target: "ec2" },
+      ],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(files["ec2.tf"]).toContain('resource "aws_instance" "box"');
+    expect(files["ec2.tf"]).toContain("docker run -d");
+    expect(files["compute.tf"]).not.toContain("aws_ecs_cluster");
+    expect(files["compute.tf"]).not.toContain("aws_ecs_task_definition");
   });
 });
