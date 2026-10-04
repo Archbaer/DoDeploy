@@ -190,4 +190,27 @@ describe("generateProject", async () => {
     if (result.ok) return;
     expect(result.diagnostics.some((d) => d.stage === "write")).toBe(true);
   });
+
+  it("passes --budget through so the interview skips the budget question", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-budget-"));
+    const driver = new ScriptedDriver([
+      "us-east-1", // region (provider+budget given)
+      "containers",
+      "api",
+      "web",
+      "fargate", // target for api
+      false,
+      false,
+    ]);
+    const result = await generateProject({
+      provider: "aws",
+      budget: "production",
+      outDir: out,
+      interview: true,
+      driver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(driver.exhausted()).toBe(true);
+  });
 });

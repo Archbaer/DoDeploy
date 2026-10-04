@@ -84,13 +84,20 @@ const generateCommand = new Command("generate")
   .description("Compose (or interview) → rules → Terraform fileset on disk")
   .argument("[path]", "path to docker-compose.yaml (omit to use the interview)")
   .option("--provider <id>", "target provider (aws|gcp|azure)")
+  .option("--budget <level>", "budget priority (cheapest|balanced|production)")
   .option("-o, --out <dir>", "output directory", "dodeploy-infra")
   .option("--name <name>", "project name (interview-only mode)")
   .option("--no-interview", "skip the interactive interview")
   .action(
     async (
       path: string | undefined,
-      options: { provider?: string; out: string; name?: string; interview: boolean },
+      options: {
+        provider?: string;
+        budget?: string;
+        out: string;
+        name?: string;
+        interview: boolean;
+      },
     ) => {
       const provider = options.provider as ProviderId | undefined;
       if (provider !== undefined && !Object.hasOwn(providers, provider)) {
@@ -98,9 +105,21 @@ const generateCommand = new Command("generate")
         process.exitCode = 1;
         return;
       }
+      const budget = options.budget as "cheapest" | "balanced" | "production" | undefined;
+      if (
+        budget !== undefined &&
+        budget !== "cheapest" &&
+        budget !== "balanced" &&
+        budget !== "production"
+      ) {
+        console.error(`unknown budget: ${options.budget} (expected cheapest|balanced|production)`);
+        process.exitCode = 1;
+        return;
+      }
       const result = await generateProject({
         composePath: path,
         provider,
+        budget,
         projectName: options.name,
         outDir: options.out,
         interview: options.interview,

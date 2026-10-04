@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { normalizeCompose, parseCompose } from "./compose/index.js";
 import type { InterviewDriver } from "./interview/driver.js";
 import { runInterview } from "./interview/interview.js";
-import type { Diagnostic, ProjectIR, Recommendation } from "./ir/index.js";
+import type { Budget, Diagnostic, ProjectIR, Recommendation } from "./ir/index.js";
 import { projectIRSchema } from "./ir/index.js";
 import { providers } from "./providers/index.js";
 import { writeTfFileset } from "./render/index.js";
@@ -13,6 +13,8 @@ export interface GenerateOptions {
   composePath?: string | undefined;
   /** Target provider. Required in non-interactive mode. */
   provider?: "aws" | "gcp" | "azure" | undefined;
+  /** Budget priority. When set, the interview skips the budget question. */
+  budget?: Budget | undefined;
   projectName?: string | undefined;
   outDir: string;
   interview: boolean;
@@ -72,11 +74,15 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
     return fail("provider required in non-interactive mode: pass --provider aws|gcp|azure");
   }
 
+  if (options.budget !== undefined) {
+    ir = { ...ir, meta: { ...ir.meta, budget: options.budget } };
+  }
+
   if (options.interview) {
     if (options.driver === undefined) {
       return fail("interview requested but no interview driver is available");
     }
-    const interview = await runInterview(ir, options.driver, options.provider);
+    const interview = await runInterview(ir, options.driver, options.provider, options.budget);
     if (!interview.ok) {
       return { ok: false, diagnostics: interview.diagnostics };
     }
