@@ -143,6 +143,8 @@ describe("generateProject", async () => {
       "containers", // workload type
       "api, worker", // service names
       "web", // kind
+      "fargate", // target for api
+      "fargate", // target for worker
       true, // needs a database
       "postgres", // engine
       false, // static assets / uploads

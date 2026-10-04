@@ -1,4 +1,4 @@
-import type { Budget, Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
+import type { Budget, ComputeTarget, Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
 import { projectIRSchema } from "../ir/index.js";
 import type { InterviewDriver } from "./driver.js";
 
@@ -25,6 +25,49 @@ const BUDGET_OPTIONS = [
     hint: "$$$ — managed services, load balancers, HA",
   },
 ];
+
+const TARGET_OPTIONS = {
+  web: [
+    {
+      value: "ec2" as const,
+      label: "EC2 box",
+      hint: "$ — single VM running docker, cheapest, no HA",
+    },
+    {
+      value: "apprunner" as const,
+      label: "App Runner",
+      hint: "$$ — managed, web services only, needs a pushed image",
+    },
+    {
+      value: "fargate" as const,
+      label: "ECS Fargate",
+      hint: "$$$ — managed + ALB, production-grade",
+    },
+  ],
+  worker: [
+    {
+      value: "ec2" as const,
+      label: "EC2 box",
+      hint: "$ — single VM running docker, cheapest, no HA",
+    },
+    { value: "fargate" as const, label: "ECS Fargate", hint: "$$$ — managed, no load balancer" },
+  ],
+};
+
+const budgetOrder = (
+  budget: Budget,
+  options: readonly { value: ComputeTarget; label: string; hint: string }[],
+): { value: ComputeTarget; label: string; hint: string }[] => {
+  const priority = (value: ComputeTarget) => {
+    if (budget === "cheapest") return value === "ec2" ? 0 : value === "apprunner" ? 1 : 2;
+    if (budget === "production") return value === "fargate" ? 0 : value === "apprunner" ? 1 : 2;
+    // balanced
+    if (value === "apprunner") return 0;
+    if (value === "fargate") return 1;
+    return 2;
+  };
+  return [...options].sort((a, b) => priority(a.value) - priority(b.value));
+};
 
 const WORKLOAD_OPTIONS = [
   { value: "containers" as const, label: "Containers", hint: "recommended for most workloads" },
@@ -102,6 +145,18 @@ export async function runInterview(
       });
     }
     changed = true;
+  }
+
+  if (meta.provider === "aws") {
+    for (const [index, unit] of compute.entries()) {
+      if (unit.kind === "stateful" || unit.target !== undefined) continue;
+      const pool = unit.kind === "web" ? TARGET_OPTIONS.web : TARGET_OPTIONS.worker;
+      const target = await driver.select(
+        `Service "${unit.name}" — run on?`,
+        budgetOrder(meta.budget, pool),
+      );
+      compute[index] = { ...unit, target };
+    }
   }
 
   if (datastores.length === 0) {

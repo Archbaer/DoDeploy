@@ -54,7 +54,14 @@ describe("runInterview", () => {
   });
 
   it("fills gaps of a compose-origin IR and marks source as mixed", async () => {
-    const driver = new ScriptedDriver(["balanced", "eu-west-1", false, true, "static-assets"]);
+    const driver = new ScriptedDriver([
+      "balanced",
+      "eu-west-1",
+      "fargate", // target for existing web service (provider defaults to aws)
+      false,
+      true,
+      "static-assets",
+    ]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [
@@ -106,8 +113,53 @@ describe("runInterview", () => {
     expect(driver.exhausted()).toBe(true);
   });
 
+  it("asks per-service compute target on AWS with cost hints", async () => {
+    const driver = new ScriptedDriver([
+      "aws",
+      "cheapest",
+      "us-east-1",
+      "containers",
+      "web, jobs",
+      "web",
+      "ec2", // target for web
+      "ec2", // target for jobs
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute.map((c) => c.target)).toEqual(["ec2", "ec2"]);
+  });
+
+  it("skips the target question for non-AWS providers", async () => {
+    const driver = new ScriptedDriver([
+      "gcp",
+      "balanced",
+      "europe-west1",
+      "containers",
+      "api",
+      "web",
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute[0]?.target).toBeUndefined();
+    expect(driver.exhausted()).toBe(true);
+  });
+
   it("keeps source as compose when nothing changed", async () => {
-    const driver = new ScriptedDriver(["balanced", "us-east-1", false, false]);
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for existing web service (provider defaults to aws)
+      false,
+      false,
+    ]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [
