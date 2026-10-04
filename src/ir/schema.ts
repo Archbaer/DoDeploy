@@ -5,11 +5,16 @@ const PORT = z.number().int().min(1).max(65535);
 const IPV4_CIDR =
   /^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\/(3[0-2]|[12]?\d)$/;
 
+export const budgetSchema = z.enum(["cheapest", "balanced", "production"]);
+
+export const computeTargetSchema = z.enum(["fargate", "apprunner", "ec2"]);
+
 export const metaSchema = z.object({
   name: z.string().min(1),
   region: z.string().min(1).default("us-east-1"),
   source: z.enum(["compose", "interview", "mixed"]).default("compose"),
   provider: z.enum(["aws", "gcp", "azure"]).default("aws"),
+  budget: budgetSchema.default("balanced"),
 });
 
 export const portSchema = z.object({
@@ -30,6 +35,7 @@ export const computeUnitSchema = z.object({
   name: z.string().min(1),
   source: z.enum(["compose", "interview"]),
   kind: z.enum(["web", "worker", "cron", "stateful"]),
+  target: computeTargetSchema.optional(),
   image: z.string().min(1).optional(),
   buildContext: z.string().min(1).optional(),
   ports: z.array(portSchema).default([]),
@@ -103,6 +109,8 @@ export const diagnosticSchema = z.object({
 });
 
 export type Meta = z.infer<typeof metaSchema>;
+export type Budget = z.infer<typeof budgetSchema>;
+export type ComputeTarget = z.infer<typeof computeTargetSchema>;
 export type Port = z.infer<typeof portSchema>;
 export type Healthcheck = z.infer<typeof healthcheckSchema>;
 export type ComputeUnit = z.infer<typeof computeUnitSchema>;

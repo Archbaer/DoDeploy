@@ -119,6 +119,29 @@ describe("projectIRSchema", () => {
       expect(paths.some((p) => p.includes("ports"))).toBe(true);
     }
   });
+
+  it("defaults budget to balanced and omits target", () => {
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    expect(ir.meta.budget).toBe("balanced");
+    expect(ir.compute).toEqual([]);
+  });
+
+  it("accepts a compute target", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x", source: "compose", budget: "cheapest" },
+      compute: [{ name: "web", source: "compose", kind: "web", target: "ec2" }],
+    });
+    expect(ir.meta.budget).toBe("cheapest");
+    expect(ir.compute[0]?.target).toBe("ec2");
+  });
+
+  it("rejects an unknown target", () => {
+    const result = projectIRSchema.safeParse({
+      meta: { name: "x" },
+      compute: [{ name: "web", source: "compose", kind: "web", target: "kubernetes" }],
+    });
+    expect(result.success).toBe(false);
+  });
 });
 describe("enrichedIRSchema", () => {
   it("extends ProjectIR with recommendations", () => {
