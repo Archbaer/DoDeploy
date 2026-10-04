@@ -750,7 +750,6 @@ export function renderAws(ir: EnrichedIR): RenderResult {
       { name: "ecs-cluster", builder: ecsClusterSection },
       { name: "task-definitions", builder: taskDefSection },
       { name: "ecs-services", builder: ecsServiceSection },
-      { name: "ec2-box", builder: ec2BoxSection },
       { name: "stateful", builder: statefulSection },
     ],
     ir,
