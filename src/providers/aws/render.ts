@@ -12,6 +12,7 @@ const fargateUnits = (ir: EnrichedIR) =>
     (u) => u.kind !== "stateful" && (u.target === undefined || u.target === "fargate"),
   );
 const ec2Units = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "ec2");
+const apprunnerUnits = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "apprunner");
 
 // Public web TCP ports are treated as HTTP; the IR has no application protocol.
 const publicRoutes = (ir: EnrichedIR) => {
@@ -498,6 +499,52 @@ EOF
 }`;
 };
 
+const apprunnerSection = (ir: EnrichedIR): string => {
+  const units = apprunnerUnits(ir);
+  if (units.length === 0) return "";
+  const partitionDataSource =
+    fargateUnits(ir).length === 0 ? 'data "aws_partition" "current" {}\n\n' : "";
+  const services = units
+    .map((u) => {
+      const label = tfName(u.name);
+      const port = u.ports[0]?.container ?? 8080;
+      return `resource "aws_apprunner_service" "${label}" {
+  service_name = ${quote(`${tfName(ir.meta.name)}-${label}`)}
+  source_configuration {
+    authentication_configuration {
+      access_role_arn = aws_iam_role.apprunner_ecr.arn
+    }
+    image_repository {
+      image_identifier      = ${unitImage(u)}
+      image_repository_type = "ECR"
+      image_configuration {
+        port = "${port}"
+      }
+    }
+  }
+}`;
+    })
+    .join("\n\n");
+  return `${partitionDataSource}resource "aws_iam_role" "apprunner_ecr" {
+  name_prefix = "dodeploy-apprunner-"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "build.apprunner.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "apprunner_ecr" {
+  role       = aws_iam_role.apprunner_ecr.name
+  policy_arn = "arn:\${data.aws_partition.current.partition}:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
+}
+
+${services}`;
+};
+
 const datastoreNetworkSection = (ir: EnrichedIR): string => {
   const groups: string[] = [];
   if (ir.datastores.some((d) => d.engine === "postgres" || d.engine === "mysql")) {
@@ -598,6 +645,12 @@ const outputsTf = (ir: EnrichedIR): string => {
   if (ec2Units(ir).length > 0) {
     lines.push(`output "box_public_ip" {
   value = aws_instance.box.public_ip
+}`);
+  }
+  for (const u of apprunnerUnits(ir)) {
+    const label = tfName(u.name);
+    lines.push(`output "apprunner_${label}_url" {
+  value = aws_apprunner_service.${label}.service_url
 }`);
   }
   for (const d of ir.datastores) {
@@ -726,6 +779,9 @@ export function renderAws(ir: EnrichedIR): RenderResult {
   };
   if (ec2Units(ir).length > 0) {
     files["ec2.tf"] = `${HEADER}${ec2BoxSection(ir)}`;
+  }
+  if (apprunnerUnits(ir).length > 0) {
+    files["apprunner.tf"] = `${HEADER}${apprunnerSection(ir)}`;
   }
 
   return {

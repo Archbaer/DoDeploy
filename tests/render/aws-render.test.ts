@@ -149,4 +149,38 @@ describe("aws renderer", () => {
     expect(files["compute.tf"]).not.toContain("aws_ecs_cluster");
     expect(files["compute.tf"]).not.toContain("aws_ecs_task_definition");
   });
+
+  it("renders apprunner-targeted web services as App Runner services", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "public.ecr.aws/x/web:v1",
+          target: "apprunner",
+          ports: [{ container: 8080, host: 8080, public: true }],
+        },
+      ],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(files["apprunner.tf"]).toContain('resource "aws_apprunner_service" "web"');
+    expect(files["apprunner.tf"]).toContain('image_repository_type = "ECR"');
+    expect(files["compute.tf"]).not.toContain("aws_ecs_cluster");
+    expect(files["outputs.tf"]).toContain('output "apprunner_web_url"');
+  });
+
+  it("emits the aws_partition data source exactly once when fargate and apprunner mix", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "web", source: "compose", kind: "web", image: "x/web", target: "apprunner" },
+        { name: "jobs", source: "compose", kind: "worker", image: "x/jobs", target: "fargate" },
+      ],
+    });
+    const result = awsRulePack.render(enriched(ir));
+    const all = Object.values(result.files).join("\n");
+    expect(all.match(/data "aws_partition" "current"/g)?.length).toBe(1);
+  });
 });
