@@ -1,4 +1,4 @@
-import type { Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
+import type { Budget, Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
 import { projectIRSchema } from "../ir/index.js";
 import type { InterviewDriver } from "./driver.js";
 
@@ -10,6 +10,20 @@ const PROVIDER_OPTIONS = [
   { value: "aws" as const, label: "AWS", hint: "ECS Fargate, RDS, ElastiCache, S3…" },
   { value: "gcp" as const, label: "Google Cloud", hint: "Cloud Run, Cloud SQL, Memorystore, GCS…" },
   { value: "azure" as const, label: "Azure", hint: "Container Apps, Flexible Server, Key Vault…" },
+];
+
+const BUDGET_OPTIONS = [
+  { value: "cheapest" as const, label: "Lowest cost", hint: "$ — single VMs, no HA, dev/hobby" },
+  {
+    value: "balanced" as const,
+    label: "Balanced",
+    hint: "$$ — managed where cheap, simple where possible",
+  },
+  {
+    value: "production" as const,
+    label: "Production-grade",
+    hint: "$$$ — managed services, load balancers, HA",
+  },
 ];
 
 const WORKLOAD_OPTIONS = [
@@ -39,6 +53,7 @@ export async function runInterview(
   ir: ProjectIR,
   driver: InterviewDriver,
   provider?: ProjectIR["meta"]["provider"],
+  budget?: Budget,
 ): Promise<InterviewResult> {
   const diagnostics: Diagnostic[] = [];
   let changed = false;
@@ -53,6 +68,12 @@ export async function runInterview(
   } else if (meta.source === "interview") {
     meta.provider = await driver.select("Target cloud provider?", PROVIDER_OPTIONS);
     changed = true;
+  }
+
+  if (budget !== undefined) {
+    meta.budget = budget;
+  } else {
+    meta.budget = await driver.select("What matters most for this deployment?", BUDGET_OPTIONS);
   }
 
   const region = await driver.text(`Region?`, { defaultValue: meta.region });

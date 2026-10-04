@@ -69,6 +69,33 @@ describe("runInterview", () => {
     expect(driver.exhausted()).toBe(true);
   });
 
+  it("asks for budget and stores it in meta", async () => {
+    const driver = new ScriptedDriver([
+      "gcp",
+      "cheapest",
+      "europe-west1",
+      "vms",
+      "legacy",
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.meta.budget).toBe("cheapest");
+  });
+
+  it("skips the budget question when a budget is passed in", async () => {
+    const driver = new ScriptedDriver(["gcp", "europe-west1", "vms", "legacy", false, false]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver, undefined, "production");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.meta.budget).toBe("production");
+    expect(driver.exhausted()).toBe(true);
+  });
+
   it("keeps source as compose when nothing changed", async () => {
     const driver = new ScriptedDriver(["us-east-1", false, false]);
     const ir = projectIRSchema.parse({
