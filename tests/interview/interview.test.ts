@@ -7,6 +7,7 @@ describe("runInterview", () => {
   it("builds a full IR from an empty interview-source project", async () => {
     const driver = new ScriptedDriver([
       "gcp",
+      "balanced",
       "europe-west1",
       "containers",
       "api, worker",
@@ -33,7 +34,16 @@ describe("runInterview", () => {
   });
 
   it("marks VM workloads as stateful", async () => {
-    const driver = new ScriptedDriver(["aws", "us-east-1", "vms", "legacy", true, "mysql", false]);
+    const driver = new ScriptedDriver([
+      "aws",
+      "balanced",
+      "us-east-1",
+      "vms",
+      "legacy",
+      true,
+      "mysql",
+      false,
+    ]);
     const ir = projectIRSchema.parse({ meta: { name: "lift", source: "interview" } });
     const result = await runInterview(ir, driver);
     expect(result.ok).toBe(true);
@@ -44,7 +54,7 @@ describe("runInterview", () => {
   });
 
   it("fills gaps of a compose-origin IR and marks source as mixed", async () => {
-    const driver = new ScriptedDriver(["eu-west-1", false, true, "static-assets"]);
+    const driver = new ScriptedDriver(["balanced", "eu-west-1", false, true, "static-assets"]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [
@@ -97,7 +107,7 @@ describe("runInterview", () => {
   });
 
   it("keeps source as compose when nothing changed", async () => {
-    const driver = new ScriptedDriver(["us-east-1", false, false]);
+    const driver = new ScriptedDriver(["balanced", "us-east-1", false, false]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [

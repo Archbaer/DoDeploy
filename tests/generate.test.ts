@@ -26,7 +26,15 @@ describe("generateProject", async () => {
     "preserves explicit %s provider and skips provider interview",
     async (provider, region, marker) => {
       const out = mkdtempSync(join(tmpdir(), "dd-gen-provider-"));
-      const driver = new ScriptedDriver([region, "containers", "api", "web", false, false]);
+      const driver = new ScriptedDriver([
+        "balanced",
+        region,
+        "containers",
+        "api",
+        "web",
+        false,
+        false,
+      ]);
       const interviewDriver: InterviewDriver = driver;
       const select = interviewDriver.select.bind(driver);
       const prompts = vi
@@ -130,6 +138,7 @@ describe("generateProject", async () => {
     const out = mkdtempSync(join(tmpdir(), "dd-gen-interview-"));
     const driver = new ScriptedDriver([
       "aws", // provider (source === "interview")
+      "balanced", // budget
       "us-east-1", // region
       "containers", // workload type
       "api, worker", // service names
