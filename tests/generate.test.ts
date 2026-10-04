@@ -8,6 +8,7 @@ import { ScriptedDriver } from "../src/interview/index.js";
 
 const FIXTURES = join(process.cwd(), "tests/compose/fixtures");
 const WEB_DB_REDIS = join(FIXTURES, "web-db-redis.yaml");
+const WEB_WORKER_DB_VOLUME = join(FIXTURES, "web-worker-db-volume.yaml");
 
 const GENERATED_FILES = [
   "providers.tf",
@@ -212,5 +213,117 @@ describe("generateProject", async () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(driver.exhausted()).toBe(true);
+  });
+
+  it("journey: interview-only cheapest renders an EC2 box", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-cheapest-"));
+    const driver = new ScriptedDriver([
+      "aws",
+      "cheapest",
+      "us-east-1",
+      "containers",
+      "web",
+      "web",
+      "ec2",
+      false,
+      false,
+    ]);
+    const result = await generateProject({
+      outDir: out,
+      interview: true,
+      driver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(existsSync(join(out, "ec2.tf"))).toBe(true);
+    expect(readFileSync(join(out, "compute.tf"), "utf8")).not.toContain("aws_ecs_cluster");
+  });
+
+  it("journey: interview-only production renders Fargate", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-production-"));
+    const driver = new ScriptedDriver([
+      "aws",
+      "production",
+      "us-east-1",
+      "containers",
+      "web",
+      "web",
+      "fargate",
+      false,
+      false,
+    ]);
+    const result = await generateProject({
+      outDir: out,
+      interview: true,
+      driver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(existsSync(join(out, "ec2.tf"))).toBe(false);
+    expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
+  });
+
+  it("journey: compose balanced renders App Runner and Fargate", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-balanced-"));
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "apprunner", // target for web
+      "fargate", // target for worker
+      true, // keep public ports
+      true, // manage postgres
+      true, // keep named volume
+    ]);
+    const result = await generateProject({
+      composePath: WEB_WORKER_DB_VOLUME,
+      provider: "aws",
+      outDir: out,
+      interview: true,
+      driver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(existsSync(join(out, "apprunner.tf"))).toBe(true);
+    expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
+    expect(readFileSync(join(out, "data.tf"), "utf8")).toContain("aws_db_instance");
+  });
+
+  it("journey: compose cheapest declines managed DBs and renders one EC2 box", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-cheapest-compose-"));
+    const driver = new ScriptedDriver([
+      "cheapest",
+      "us-east-1",
+      "ec2", // target for web
+      "ec2", // target for worker
+      true, // keep public ports
+      false, // decline managed postgres
+      true, // keep named volume
+    ]);
+    const result = await generateProject({
+      composePath: WEB_WORKER_DB_VOLUME,
+      provider: "aws",
+      outDir: out,
+      interview: true,
+      driver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(existsSync(join(out, "ec2.tf"))).toBe(true);
+    expect(readFileSync(join(out, "data.tf"), "utf8")).not.toContain("aws_db_instance");
+    expect(result.diagnostics.some((d) => d.message.includes("db"))).toBe(true);
+  });
+
+  it("journey: non-interactive --budget cheapest keeps targets as Fargate", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-noninteractive-budget-"));
+    const result = await generateProject({
+      composePath: WEB_DB_REDIS,
+      provider: "aws",
+      budget: "cheapest",
+      outDir: out,
+      interview: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
   });
 });
