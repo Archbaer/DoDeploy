@@ -104,7 +104,7 @@ export async function runInterview(
   const meta = { ...ir.meta };
   const compute = [...ir.compute];
   const datastores = [...ir.datastores];
-  const storage = [...ir.storage];
+  let storage = [...ir.storage];
 
   if (provider !== undefined) {
     meta.provider = provider;
@@ -159,11 +159,63 @@ export async function runInterview(
     }
   }
 
+  if (compute.some((u) => u.ports.some((p) => p.public))) {
+    const keepPublic = await driver.confirm(
+      "Public ports detected — expose via load balancer / public ingress? ($$$ on AWS: ALB)",
+      true,
+    );
+    if (!keepPublic) {
+      for (const [index, unit] of compute.entries()) {
+        compute[index] = { ...unit, ports: unit.ports.map((p) => ({ ...p, public: false })) };
+      }
+      changed = true;
+    }
+  }
+
   if (datastores.length === 0) {
     const needsDb = await driver.confirm("Does your app need a database?", true);
     if (needsDb) {
       const engine = await driver.select("Which engine?", ENGINE_OPTIONS);
       datastores.push({ name: engine, engine, detected: false });
+      changed = true;
+    }
+  } else {
+    for (let i = datastores.length - 1; i >= 0; i--) {
+      const d = datastores[i];
+      if (!d) continue;
+      const managed = await driver.confirm(
+        `Provision managed service for ${d.engine} "${d.name}"? ($$$ — managed databases are usually the biggest cost line)`,
+        true,
+      );
+      if (!managed) {
+        datastores.splice(i, 1);
+        diagnostics.push({
+          stage: "interview",
+          severity: "info",
+          message: `datastore "${d.name}" skipped by user; run it yourself and wire connection env vars manually`,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  const volumeNodes = storage.filter(
+    (s) => s.kind === "shared-volume" || s.kind === "local-volume",
+  );
+  if (volumeNodes.length > 0) {
+    const keepVolumes = await driver.confirm(
+      "Named volumes detected — keep them in the plan? (persistent storage renders as deferred EFS/$$$ items)",
+      true,
+    );
+    if (!keepVolumes) {
+      storage = storage.filter((s) => s.kind !== "shared-volume" && s.kind !== "local-volume");
+      for (const v of volumeNodes) {
+        diagnostics.push({
+          stage: "interview",
+          severity: "info",
+          message: `volume "${v.name}" skipped by user; re-add as EFS/azure files/etc if needed`,
+        });
+      }
       changed = true;
     }
   }

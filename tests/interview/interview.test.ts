@@ -58,8 +58,9 @@ describe("runInterview", () => {
       "balanced",
       "eu-west-1",
       "fargate", // target for existing web service (provider defaults to aws)
-      false,
-      true,
+      false, // decline public LB
+      false, // no new database
+      true, // add storage
       "static-assets",
     ]);
     const ir = projectIRSchema.parse({
@@ -152,13 +153,70 @@ describe("runInterview", () => {
     expect(driver.exhausted()).toBe(true);
   });
 
+  it("drops public exposure when the user declines the load balancer", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web (aws default provider)
+      false, // no load balancer
+      false, // no new database needed (datastores empty → confirm)
+      false, // no storage
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute[0]?.ports[0]?.public).toBe(false);
+  });
+
+  it("drops a managed datastore the user declines", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web
+      true, // keep LB
+      false, // decline managed postgres
+      false, // no storage
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+      datastores: [{ name: "db", engine: "postgres", detected: true }],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.datastores).toEqual([]);
+    expect(result.diagnostics.some((d) => d.message.includes("db"))).toBe(true);
+  });
+
   it("keeps source as compose when nothing changed", async () => {
     const driver = new ScriptedDriver([
       "balanced",
       "us-east-1",
       "fargate", // target for existing web service (provider defaults to aws)
-      false,
-      false,
+      true, // keep public ports unchanged
+      false, // no new database
+      false, // no storage
     ]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
