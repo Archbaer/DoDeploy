@@ -42,6 +42,62 @@ export const dbIR = projectIRSchema.parse({
   },
 });
 
+export const awsEc2IR = projectIRSchema.parse({
+  meta: { name: "shop" },
+  compute: [
+    {
+      name: "web",
+      source: "compose",
+      kind: "web",
+      image: "ghcr.io/acme/web:1.0.0",
+      target: "ec2",
+      ports: [{ container: 8080, host: 80, public: true }],
+    },
+    {
+      name: "worker",
+      source: "compose",
+      kind: "worker",
+      image: "ghcr.io/acme/worker:1.0.0",
+      target: "ec2",
+    },
+  ],
+});
+
+export const awsAppRunnerIR = projectIRSchema.parse({
+  meta: { name: "shop" },
+  compute: [
+    {
+      name: "web",
+      source: "compose",
+      kind: "web",
+      image: "public.ecr.aws/acme/web:1.0.0",
+      target: "apprunner",
+      ports: [{ container: 8080, host: 8080, public: true }],
+    },
+  ],
+});
+
+export const awsMixedTargetIR = projectIRSchema.parse({
+  meta: { name: "shop" },
+  compute: [
+    {
+      name: "web",
+      source: "compose",
+      kind: "web",
+      image: "public.ecr.aws/acme/web:1.0.0",
+      target: "apprunner",
+      ports: [{ container: 8080, host: 8080, public: true }],
+    },
+    {
+      name: "worker",
+      source: "compose",
+      kind: "worker",
+      image: "ghcr.io/acme/worker:1.0.0",
+      target: "fargate",
+    },
+  ],
+});
+
 export const expectRec = (recommendations: Recommendation[], ruleId: string): Recommendation => {
   const rec = recommendations.find((r) => r.ruleId === ruleId);
   expect(rec, `recommendation ${ruleId} missing`).toBeDefined();
