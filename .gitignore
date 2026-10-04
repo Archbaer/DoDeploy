@@ -8,4 +8,6 @@ coverage/
 *.log
 .DS_Store
 dodeploy-infra/
-
+.superpowers/
+.docs
+docs/superpowers/
