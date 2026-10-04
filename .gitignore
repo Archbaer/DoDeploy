@@ -9,3 +9,6 @@ coverage/
 .DS_Store
 dodeploy-infra/
 
+
+# Local agent instructions — not versioned
+AGENTS.md
