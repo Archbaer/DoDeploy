@@ -1,6 +1,12 @@
 import type { Rule } from "../../rules/index.js";
 import type { CloudProvider } from "../types.js";
-import { statefulEc2Rule, webFargateRule, workerFargateRule } from "./rules/compute.js";
+import {
+  appRunnerRule,
+  ec2BoxRule,
+  statefulEc2Rule,
+  webFargateRule,
+  workerFargateRule,
+} from "./rules/compute.js";
 import {
   missingDatabaseRule,
   mongodbDocumentdbRule,
@@ -14,6 +20,8 @@ import { sharedVolumeEfsRule, staticS3Rule } from "./rules/storage.js";
 export const awsRules: Rule[] = [
   webFargateRule,
   workerFargateRule,
+  ec2BoxRule,
+  appRunnerRule,
   statefulEc2Rule,
   postgresRdsRule,
   mysqlRdsRule,

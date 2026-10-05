@@ -58,6 +58,15 @@ describe("aws renderer", () => {
     );
   });
 
+  it("includes ec2.tf for ec2-targeted workloads", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [{ name: "web", source: "compose", kind: "web", image: "nginx", target: "ec2" }],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(Object.keys(files).sort()).toContain("ec2.tf");
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
@@ -117,5 +126,95 @@ describe("aws renderer", () => {
     expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "jobs"');
     expect(files["outputs.tf"]).toContain('output "bucket_uploads"');
     expect(files["outputs.tf"]).toContain('output "db_docs_endpoint"');
+  });
+
+  it("renders ec2-targeted services as a single EC2 box and no ECS resources", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          target: "ec2",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+        { name: "jobs", source: "compose", kind: "worker", image: "worker:v1", target: "ec2" },
+      ],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(files["ec2.tf"]).toContain('resource "aws_instance" "box"');
+    expect(files["ec2.tf"]).toContain("docker run -d");
+    expect(files["compute.tf"]).not.toContain("aws_ecs_cluster");
+    expect(files["compute.tf"]).not.toContain("aws_ecs_task_definition");
+  });
+
+  it("does not emit spurious route TODOs for ec2-targeted public ports", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "web app",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          target: "ec2",
+          ports: [
+            { container: 80, host: 80, public: true },
+            { container: 443, host: 443, public: true },
+            { container: 80, host: 8080, public: true }, // duplicate protocol/port not possible in real schema, but defends ingress dedup
+          ],
+          env: { GREETING: "hello world", QUOTE: "it's" },
+        },
+      ],
+    });
+    const { files, diagnostics } = awsRulePack.render(enriched(ir));
+    expect(files["ec2.tf"]).not.toContain("TODO(dodeploy)");
+    expect(
+      diagnostics.some((d) => d.message.includes("public port") || d.message.includes("route")),
+    ).toBe(false);
+    expect(files["ec2.tf"]).toContain("--name web-app");
+    expect(files["ec2.tf"]).toContain("GREETING='hello world'");
+    expect(files["ec2.tf"]).toContain("QUOTE='it'\\''s'");
+  });
+
+  it("renders apprunner-targeted web services as App Runner services", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "public.ecr.aws/x/web:v1",
+          target: "apprunner",
+          ports: [{ container: 8080, host: 8080, public: true }],
+          env: { FOO: "bar", BAZ: "qux" },
+        },
+      ],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    expect(files["apprunner.tf"]).toContain('resource "aws_apprunner_service" "web"');
+    expect(files["apprunner.tf"]).toContain('image_repository_type = "ECR_PUBLIC"');
+    expect(files["apprunner.tf"]).toContain("runtime_environment_variables");
+    expect(files["apprunner.tf"]).toContain("FOO");
+    expect(files["apprunner.tf"]).toContain("BAZ");
+    expect(files["apprunner.tf"]).not.toContain("authentication_configuration");
+    expect(files["compute.tf"]).not.toContain("aws_ecs_cluster");
+    expect(files["outputs.tf"]).toContain('output "apprunner_web_url"');
+  });
+
+  it("emits the aws_partition data source exactly once when fargate and apprunner mix", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "web", source: "compose", kind: "web", image: "x/web", target: "apprunner" },
+        { name: "jobs", source: "compose", kind: "worker", image: "x/jobs", target: "fargate" },
+      ],
+    });
+    const result = awsRulePack.render(enriched(ir));
+    const all = Object.values(result.files).join("\n");
+    expect(all.match(/data "aws_partition" "current"/g)?.length).toBe(1);
   });
 });

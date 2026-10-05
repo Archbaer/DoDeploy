@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { acceptRecommendations, runInterview, ScriptedDriver } from "../../src/interview/index.js";
-import type { EnrichedIR } from "../../src/ir/index.js";
+import {
+  acceptRecommendations,
+  runInterview,
+  ScriptedDriver,
+  TARGET_ORDER,
+} from "../../src/interview/index.js";
+import type { Budget, EnrichedIR } from "../../src/ir/index.js";
 import { projectIRSchema } from "../../src/ir/index.js";
 
 describe("runInterview", () => {
@@ -54,7 +59,15 @@ describe("runInterview", () => {
   });
 
   it("fills gaps of a compose-origin IR and marks source as mixed", async () => {
-    const driver = new ScriptedDriver(["balanced", "eu-west-1", false, true, "static-assets"]);
+    const driver = new ScriptedDriver([
+      "balanced",
+      "eu-west-1",
+      "fargate", // target for existing web service (provider defaults to aws)
+      false, // decline public LB
+      false, // no new database
+      true, // add storage
+      "static-assets",
+    ]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [
@@ -106,8 +119,178 @@ describe("runInterview", () => {
     expect(driver.exhausted()).toBe(true);
   });
 
+  it.each([
+    ["cheapest", ["ec2", "apprunner", "fargate"]],
+    ["balanced", ["apprunner", "fargate", "ec2"]],
+    ["production", ["fargate", "apprunner", "ec2"]],
+  ] as [Budget, string[]][])("orders targets by %s budget", (budget, expected) => {
+    expect(TARGET_ORDER[budget]).toEqual(expected);
+  });
+
+  it("asks per-service compute target on AWS with cost hints", async () => {
+    const driver = new ScriptedDriver([
+      "aws",
+      "cheapest",
+      "us-east-1",
+      "containers",
+      "web, jobs",
+      "web",
+      "ec2", // target for web
+      "ec2", // target for jobs
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute.map((c) => c.target)).toEqual(["ec2", "ec2"]);
+  });
+
+  it("skips the target question for non-AWS providers", async () => {
+    const driver = new ScriptedDriver([
+      "gcp",
+      "balanced",
+      "europe-west1",
+      "containers",
+      "api",
+      "web",
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute[0]?.target).toBeUndefined();
+    expect(driver.exhausted()).toBe(true);
+  });
+
+  it("drops public exposure when the user declines the load balancer", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web (aws default provider)
+      false, // no load balancer
+      false, // no new database needed (datastores empty → confirm)
+      false, // no storage
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute[0]?.ports[0]?.public).toBe(false);
+  });
+
+  it("drops a managed datastore the user declines", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web
+      true, // keep LB
+      false, // decline managed postgres
+      false, // no storage
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+      datastores: [{ name: "db", engine: "postgres", detected: true }],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.datastores).toEqual([]);
+    expect(result.diagnostics.some((d) => d.message.includes("db"))).toBe(true);
+  });
+
+  it("keeps a managed datastore the user accepts", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web
+      true, // keep LB
+      true, // accept managed postgres
+      false, // no storage
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+      datastores: [{ name: "db", engine: "postgres", detected: true }],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.datastores).toHaveLength(1);
+    expect(result.value.datastores[0]?.name).toBe("db");
+  });
+
+  it("drops named volumes the user declines", async () => {
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for web
+      true, // keep LB
+      false, // no new database
+      false, // decline named volumes
+      false, // no static assets/uploads
+    ]);
+    const ir = projectIRSchema.parse({
+      meta: { name: "shop", source: "compose" },
+      compute: [
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, public: true }],
+        },
+      ],
+      storage: [{ name: "data", kind: "shared-volume", source: "compose", sharedBy: ["web"] }],
+    });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.storage).toEqual([]);
+    expect(result.diagnostics.some((d) => d.message.includes("data"))).toBe(true);
+    expect(driver.exhausted()).toBe(true);
+  });
+
   it("keeps source as compose when nothing changed", async () => {
-    const driver = new ScriptedDriver(["balanced", "us-east-1", false, false]);
+    const driver = new ScriptedDriver([
+      "balanced",
+      "us-east-1",
+      "fargate", // target for existing web service (provider defaults to aws)
+      true, // keep public ports unchanged
+      false, // no new database
+      false, // no storage
+    ]);
     const ir = projectIRSchema.parse({
       meta: { name: "shop", source: "compose" },
       compute: [

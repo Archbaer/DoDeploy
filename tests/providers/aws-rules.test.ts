@@ -115,6 +115,28 @@ describe("aws rule pack", () => {
     expect(expectRec(value.recommendations, "aws.build.ecr").costTier).toBe("free");
   });
 
+  it("recommends per target with cost tiers and skips Fargate for cheap targets", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "web", source: "compose", kind: "web", image: "img:1", target: "ec2" },
+        { name: "api", source: "compose", kind: "web", image: "img:2", target: "apprunner" },
+        { name: "jobs", source: "compose", kind: "worker", image: "img:3" },
+      ],
+    });
+    const { value } = runAws(ir);
+    expectRec(value.recommendations, "aws.compute.ec2-box");
+    expectRec(value.recommendations, "aws.compute.app-runner");
+    const fargateRecs = value.recommendations.filter((r) => r.ruleId === "aws.compute.web-fargate");
+    expect(
+      fargateRecs.every((r) => !r.message.includes('"web"') && !r.message.includes('"api"')),
+    ).toBe(true);
+    const workerFargate = value.recommendations.filter(
+      (r) => r.ruleId === "aws.compute.worker-fargate",
+    );
+    expect(workerFargate.some((r) => r.message.includes('"jobs"'))).toBe(true);
+  });
+
   it("rule ids are namespaced and unique", () => {
     const ids = awsRulePack.rules.map((r) => r.id);
     expect(new Set(ids).size).toBe(ids.length);

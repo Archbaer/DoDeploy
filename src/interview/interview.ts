@@ -1,4 +1,4 @@
-import type { Budget, Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
+import type { Budget, ComputeTarget, Diagnostic, ProjectIR, Recommendation } from "../ir/index.js";
 import { projectIRSchema } from "../ir/index.js";
 import type { InterviewDriver } from "./driver.js";
 
@@ -25,6 +25,48 @@ const BUDGET_OPTIONS = [
     hint: "$$$ — managed services, load balancers, HA",
   },
 ];
+
+const TARGET_OPTIONS = {
+  web: [
+    {
+      value: "ec2" as const,
+      label: "EC2 box",
+      hint: "$ — single VM running docker, cheapest, no HA",
+    },
+    {
+      value: "apprunner" as const,
+      label: "App Runner",
+      hint: "$$ — managed, web services only, needs a pushed image",
+    },
+    {
+      value: "fargate" as const,
+      label: "ECS Fargate",
+      hint: "$$$ — managed + ALB, production-grade",
+    },
+  ],
+  worker: [
+    {
+      value: "ec2" as const,
+      label: "EC2 box",
+      hint: "$ — single VM running docker, cheapest, no HA",
+    },
+    { value: "fargate" as const, label: "ECS Fargate", hint: "$$$ — managed, no load balancer" },
+  ],
+};
+
+export const TARGET_ORDER: Record<Budget, ComputeTarget[]> = {
+  cheapest: ["ec2", "apprunner", "fargate"],
+  balanced: ["apprunner", "fargate", "ec2"],
+  production: ["fargate", "apprunner", "ec2"],
+};
+
+const budgetOrder = (
+  budget: Budget,
+  options: readonly { value: ComputeTarget; label: string; hint: string }[],
+): { value: ComputeTarget; label: string; hint: string }[] =>
+  [...options].sort(
+    (a, b) => TARGET_ORDER[budget].indexOf(a.value) - TARGET_ORDER[budget].indexOf(b.value),
+  );
 
 const WORKLOAD_OPTIONS = [
   { value: "containers" as const, label: "Containers", hint: "recommended for most workloads" },
@@ -61,7 +103,7 @@ export async function runInterview(
   const meta = { ...ir.meta };
   const compute = [...ir.compute];
   const datastores = [...ir.datastores];
-  const storage = [...ir.storage];
+  let storage = [...ir.storage];
 
   if (provider !== undefined) {
     meta.provider = provider;
@@ -104,11 +146,75 @@ export async function runInterview(
     changed = true;
   }
 
+  if (meta.provider === "aws") {
+    for (const [index, unit] of compute.entries()) {
+      if (unit.kind === "stateful" || unit.target !== undefined) continue;
+      const pool = unit.kind === "web" ? TARGET_OPTIONS.web : TARGET_OPTIONS.worker;
+      const target = await driver.select(
+        `Service "${unit.name}" — run on?`,
+        budgetOrder(meta.budget, pool),
+      );
+      compute[index] = { ...unit, target };
+    }
+  }
+
+  if (compute.some((u) => u.ports.some((p) => p.public))) {
+    const keepPublic = await driver.confirm(
+      "Public ports detected — expose via load balancer / public ingress? ($$$ on AWS: ALB)",
+      true,
+    );
+    if (!keepPublic) {
+      for (const [index, unit] of compute.entries()) {
+        compute[index] = { ...unit, ports: unit.ports.map((p) => ({ ...p, public: false })) };
+      }
+      changed = true;
+    }
+  }
+
   if (datastores.length === 0) {
     const needsDb = await driver.confirm("Does your app need a database?", true);
     if (needsDb) {
       const engine = await driver.select("Which engine?", ENGINE_OPTIONS);
       datastores.push({ name: engine, engine, detected: false });
+      changed = true;
+    }
+  } else {
+    for (let i = datastores.length - 1; i >= 0; i--) {
+      const d = datastores[i];
+      if (!d) continue;
+      const managed = await driver.confirm(
+        `Provision managed service for ${d.engine} "${d.name}"? ($$$ — managed databases are usually the biggest cost line)`,
+        true,
+      );
+      if (!managed) {
+        datastores.splice(i, 1);
+        diagnostics.push({
+          stage: "interview",
+          severity: "info",
+          message: `datastore "${d.name}" skipped by user; run it yourself and wire connection env vars manually`,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  const volumeNodes = storage.filter(
+    (s) => s.kind === "shared-volume" || s.kind === "local-volume",
+  );
+  if (volumeNodes.length > 0) {
+    const keepVolumes = await driver.confirm(
+      "Named volumes detected — keep them in the plan? (persistent storage renders as deferred EFS/$$$ items)",
+      true,
+    );
+    if (!keepVolumes) {
+      storage = storage.filter((s) => s.kind !== "shared-volume" && s.kind !== "local-volume");
+      for (const v of volumeNodes) {
+        diagnostics.push({
+          stage: "interview",
+          severity: "info",
+          message: `volume "${v.name}" skipped by user; re-add as EFS/azure files/etc if needed`,
+        });
+      }
       changed = true;
     }
   }

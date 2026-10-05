@@ -1,0 +1,20 @@
+services:
+  web:
+    image: ghcr.io/acme/web:1.0.0
+    ports:
+      - "80:8080"
+    environment:
+      DATABASE_URL: postgres://db:5432/shop
+    volumes:
+      - uploads:/data/uploads
+  worker:
+    image: ghcr.io/acme/worker:1.0.0
+    environment:
+      DATABASE_URL: postgres://db:5432/shop
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: secret
+
+volumes:
+  uploads:
