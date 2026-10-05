@@ -262,12 +262,9 @@ const sgSection = (ir: EnrichedIR): string => {
       port: r.port,
     })),
   ];
-  const uniqueIngress = ingress.filter(
-    (rule, index) =>
-      ingress.findIndex(
-        (other) => other.from === rule.from && other.to === rule.to && other.port === rule.port,
-      ) === index,
-  );
+  const uniqueIngress = [
+    ...new Map(ingress.map((r) => [`${r.from}|${r.to}|${r.port}`, r])).values(),
+  ];
   return `${groups}\n\n${uniqueIngress
     .map(
       (rule, index) => `resource "aws_security_group_rule" "ingress_${index}" {
@@ -441,8 +438,10 @@ ${loadBalancer}${registry}
 const ec2BoxSection = (ir: EnrichedIR): string => {
   const units = ec2Units(ir);
   if (units.length === 0) return "";
-  const ingress = units
-    .flatMap((u) => u.ports.filter((p) => p.public))
+  const publicPorts = units.flatMap((u) => u.ports.filter((p) => p.public));
+  const ingress = [
+    ...new Map(publicPorts.map((p) => [`${p.host ?? p.container}:${p.protocol}`, p])).values(),
+  ]
     .map(
       (p) => `  ingress {
     from_port = ${p.host ?? p.container}
@@ -452,14 +451,16 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
   }`,
     )
     .join("\n");
+  const esc = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
   const runs = units
     .map((u) => {
       const ports = u.ports.map((p) => `-p ${p.host ?? p.container}:${p.container}`).join(" ");
       const env = Object.entries(u.env)
-        .map(([k, v]) => `-e ${k}=${v}`)
+        .map(([k, v]) => `-e ${k}=${esc(v)}`)
         .join(" ");
       const image = u.image ?? `\${var.${tfName(u.name)}_image}`;
-      return `docker run -d --restart unless-stopped --name ${u.name} ${ports}${env ? ` ${env}` : ""} ${image}`;
+      const name = u.name.replace(/[^a-zA-Z0-9_.-]/g, "-");
+      return `docker run -d --restart unless-stopped --name ${name} ${ports}${env ? ` ${env}` : ""} ${image}`;
     })
     .join("\n");
   return `data "aws_ami" "al2023" {
@@ -508,17 +509,24 @@ const apprunnerSection = (ir: EnrichedIR): string => {
     .map((u) => {
       const label = tfName(u.name);
       const port = u.ports[0]?.container ?? 8080;
+      const repoType = u.image?.startsWith("public.ecr.aws") ? "ECR_PUBLIC" : "ECR";
+      const envVars = Object.entries(u.env)
+        .map(([k, v]) => `${k} = ${quote(v)}`)
+        .join(", ");
       return `resource "aws_apprunner_service" "${label}" {
   service_name = ${quote(`${tfName(ir.meta.name)}-${label}`)}
   source_configuration {
-    authentication_configuration {
+${
+  repoType === "ECR"
+    ? `    authentication_configuration {
       access_role_arn = aws_iam_role.apprunner_ecr.arn
-    }
-    image_repository {
+    }\n`
+    : ""
+}    image_repository {
       image_identifier      = ${unitImage(u)}
-      image_repository_type = "ECR"
+      image_repository_type = ${quote(repoType)}
       image_configuration {
-        port = "${port}"
+        port = "${port}"${envVars ? `\n        runtime_environment_variables = { ${envVars} }` : ""}
       }
     }
   }
@@ -689,7 +697,7 @@ export function renderAws(ir: EnrichedIR): RenderResult {
   }
   const routes = publicRoutes(ir);
   const routeTodos: string[] = [];
-  for (const unit of ir.compute) {
+  for (const unit of fargateUnits(ir)) {
     for (const port of unit.ports.filter((p) => p.public)) {
       if (routes.some((r) => r.unit === unit && r.port === port)) continue;
       const reason =
@@ -702,11 +710,19 @@ export function renderAws(ir: EnrichedIR): RenderResult {
         `# TODO(dodeploy): ${JSON.stringify(unit.name)}:${port.container}: ${reason}`,
       );
     }
+  }
+  for (const unit of ir.compute) {
     for (const key of unit.secrets) {
       diagnostics.push({
         stage: "render",
         severity: "warning",
-        message: `${quote(unit.name)}: secret ${quote(key)} requires manual Secrets Manager injection and ECS execution role permissions`,
+        message: `${quote(unit.name)}: secret ${quote(key)} requires manual Secrets Manager injection and ${
+          unit.target === "ec2"
+            ? "manual provisioning on the EC2 box"
+            : unit.target === "apprunner"
+              ? "App Runner secrets configuration"
+              : "ECS execution role permissions"
+        }`,
       });
     }
   }
