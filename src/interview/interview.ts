@@ -54,20 +54,19 @@ const TARGET_OPTIONS = {
   ],
 };
 
+export const TARGET_ORDER: Record<Budget, ComputeTarget[]> = {
+  cheapest: ["ec2", "apprunner", "fargate"],
+  balanced: ["apprunner", "fargate", "ec2"],
+  production: ["fargate", "apprunner", "ec2"],
+};
+
 const budgetOrder = (
   budget: Budget,
   options: readonly { value: ComputeTarget; label: string; hint: string }[],
-): { value: ComputeTarget; label: string; hint: string }[] => {
-  const priority = (value: ComputeTarget) => {
-    if (budget === "cheapest") return value === "ec2" ? 0 : value === "apprunner" ? 1 : 2;
-    if (budget === "production") return value === "fargate" ? 0 : value === "apprunner" ? 1 : 2;
-    // balanced
-    if (value === "apprunner") return 0;
-    if (value === "fargate") return 1;
-    return 2;
-  };
-  return [...options].sort((a, b) => priority(a.value) - priority(b.value));
-};
+): { value: ComputeTarget; label: string; hint: string }[] =>
+  [...options].sort(
+    (a, b) => TARGET_ORDER[budget].indexOf(a.value) - TARGET_ORDER[budget].indexOf(b.value),
+  );
 
 const WORKLOAD_OPTIONS = [
   { value: "containers" as const, label: "Containers", hint: "recommended for most workloads" },
