@@ -2,6 +2,27 @@
   "name": "dodeploy",
   "version": "0.2.0",
   "description": "Turn a docker-compose.yaml into deployable Terraform for AWS, GCP and Azure",
+  "license": "Apache-2.0",
+  "author": "Archbaer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Archbaer/DoDeploy.git"
+  },
+  "homepage": "https://github.com/Archbaer/DoDeploy#readme",
+  "bugs": "https://github.com/Archbaer/DoDeploy/issues",
+  "keywords": [
+    "terraform",
+    "docker-compose",
+    "deploy",
+    "aws",
+    "gcp",
+    "azure",
+    "iac",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "dodeploy": "dist/bin.js"
@@ -26,7 +47,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "check:versions": "node scripts/check-exact-versions.mjs",
-    "ci": "npm run check:versions && npm run lint && npm run typecheck && npm run test:coverage && npm run build"
+    "ci": "npm run check:versions && npm run lint && npm run typecheck && npm run test:coverage && npm run build",
+    "prepublishOnly": "npm run ci"
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",
