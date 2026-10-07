@@ -54,6 +54,28 @@ describe("gcp renderer", () => {
     }
   });
 
+  it("renders background-only workers as Cloud Run jobs, not HTTP services (issue #34)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "worker", source: "compose", kind: "worker", image: "my-worker:1" },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, protocol: "tcp", public: true }],
+        },
+      ],
+    });
+    const { files } = gcpRulePack.render(enriched(gcpRulePack.rules, ir));
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_job" "worker"');
+    expect(files["compute.tf"]).not.toContain('resource "google_cloud_run_v2_service" "worker"');
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_service" "web"');
+    expect(files["outputs.tf"]).not.toContain("google_cloud_run_v2_service.worker");
+    expect(files["outputs.tf"]).toContain("google_cloud_run_v2_service.web.uri");
+  });
+
   it("renders Cloud Run, Cloud SQL, Memorystore and GCS", () => {
     const { files } = gcpRulePack.render(enriched(gcpRulePack.rules));
     expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_service" "api"');
@@ -102,7 +124,7 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain("TODO(dodeploy)");
     expect(files["data.tf"]).toContain('resource "google_sql_database_instance" "legacy"');
     expect(files["data.tf"]).toContain("MYSQL_8_0");
-    expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL_ONLY");
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_job" "w"');
   });
 
   it("renders Azure object storage and explicitly defers volume mounts and Cosmos DB", () => {

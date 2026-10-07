@@ -144,6 +144,24 @@ const computeSection = (ir: EnrichedIR): string =>
           ? `\n        command = [${u.entrypoint.map(quote).join(", ")}]`
           : "") +
         (u.command !== undefined ? `\n        args    = [${u.command.map(quote).join(", ")}]` : "");
+      // Background workloads without HTTP ingress map to Cloud Run jobs, matching the
+      // worker rule — services require an ingress listener and startup readiness.
+      if (u.kind === "worker" || u.kind === "cron") {
+        return `${secretTodos.length > 0 ? `${secretTodos}\n` : ""}resource "google_cloud_run_v2_job" "${label}" {
+  name     = ${quote(label)}
+  location = var.region
+
+  template {
+    template {
+      containers {
+        image = ${image}${commandArgs}${env}
+      }
+    }
+  }
+
+  depends_on = [google_project_service.apis["run.googleapis.com"]]
+}`;
+      }
       return `${secretTodos.length > 0 ? `${secretTodos}\n` : ""}resource "google_cloud_run_v2_service" "${label}" {
   name     = ${quote(label)}
   location = var.region
@@ -236,7 +254,8 @@ const storageBlock = (s: EnrichedIR["storage"][number], ir: EnrichedIR): string 
 
 const outputsTf = (ir: EnrichedIR): string => {
   const lines: string[] = [];
-  for (const u of ir.compute.filter((c) => c.kind !== "stateful")) {
+  // Only web units render as services with a URI; workers/cron render as jobs.
+  for (const u of ir.compute.filter((c) => c.kind === "web")) {
     lines.push(`output "service_${tfName(u.name)}_url" {
   value = google_cloud_run_v2_service.${tfName(u.name)}.uri
 }`);
