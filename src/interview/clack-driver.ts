@@ -3,7 +3,9 @@ import type { InterviewDriver, SelectOption } from "./driver.js";
 
 function bail(): never {
   cancel("Interview cancelled");
-  process.exit(0);
+  // 130 = 128 + SIGINT: cancellation is not a successful generation, so
+  // shell automation (`generate && next-command`) must not continue.
+  process.exit(130);
 }
 
 /** Human-facing driver backed by @clack/prompts. */

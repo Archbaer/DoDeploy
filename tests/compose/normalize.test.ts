@@ -8,6 +8,37 @@ const load = (name: string) => {
 };
 
 describe("normalizeCompose", () => {
+  it("accepts numeric env, network maps, build options and disabled healthchecks (issue #26)", () => {
+    const file = composeFileSchema.parse({
+      services: {
+        numericEnv: { image: "nginx", environment: { PORT: 8080, DEBUG: true, UNSET: null } },
+        networkMap: { image: "nginx", networks: { default: { aliases: ["web"] } } },
+        buildOptions: {
+          build: { context: ".", dockerfile: "Dockerfile.prod", target: "runtime" },
+        },
+        disabledHealthcheck: { image: "nginx", healthcheck: { disable: true } },
+      },
+    });
+    expect(file.services.numericEnv?.environment).toEqual({
+      PORT: "8080",
+      DEBUG: "true",
+      UNSET: "",
+    });
+    expect(file.services.networkMap?.networks).toEqual(["default"]);
+    expect(file.services.buildOptions?.build).toMatchObject({
+      context: ".",
+      dockerfile: "Dockerfile.prod",
+    });
+    const result = normalizeCompose(file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byName = new Map(result.value.compute.map((u) => [u.name, u]));
+    expect(byName.get("numericEnv")?.env).toEqual({ PORT: "8080", DEBUG: "true", UNSET: "" });
+    expect(byName.get("buildOptions")?.buildContext).toBe(".");
+    // A disabled healthcheck means "no healthcheck" — not an empty command.
+    expect(byName.get("disabledHealthcheck")?.healthcheck).toBeUndefined();
+  });
+
   it("maps a public web service with host port to a web compute unit", () => {
     const result = normalizeCompose(load("web-app.yaml"));
     expect(result.ok).toBe(true);
@@ -106,6 +137,27 @@ describe("normalizeCompose", () => {
     expect(api?.cpu).toBe(0.5);
     expect(api?.memoryMb).toBe(512);
     expect(api?.healthcheck).toMatchObject({ intervalSeconds: 30, timeoutSeconds: 5, retries: 3 });
+  });
+
+  it("warns and falls back to defaults for unparseable healthcheck durations (issue #27)", () => {
+    const file = composeFileSchema.parse({
+      services: {
+        web: {
+          image: "nginx",
+          healthcheck: { test: ["CMD", "true"], interval: "bad30s", timeout: "1.5s" },
+        },
+      },
+    });
+    const result = normalizeCompose(file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const web = result.value.compute[0];
+    expect(web?.healthcheck).toMatchObject({ intervalSeconds: 30, timeoutSeconds: 2 });
+    expect(
+      result.diagnostics.some(
+        (d) => d.severity === "warning" && d.message.includes('interval "bad30s"'),
+      ),
+    ).toBe(true);
   });
 
   it("flags secret-looking environment keys", () => {

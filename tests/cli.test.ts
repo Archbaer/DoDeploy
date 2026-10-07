@@ -109,6 +109,24 @@ describe("commands", () => {
     expect(existsSync(join(out, "compute.tf"))).toBe(true);
   });
 
+  it("generate with a closed/non-TTY stdin fails fast instead of dangling (issue #40)", async () => {
+    // runCli pipes stdin, so isTTY is false — same as `</dev/null` or CI.
+    const bare = await runCli(["generate"]);
+    expect(bare.code).toBe(1);
+    expect(bare.stdout + bare.stderr).toContain("not a TTY");
+    expect(bare.stdout + bare.stderr).toContain("--no-interview");
+    expect(bare.stderr).not.toContain("unsettled top-level await");
+
+    const withCompose = await runCli([
+      "generate",
+      "tests/compose/fixtures/web-app.yaml",
+      "--provider",
+      "aws",
+    ]);
+    expect(withCompose.code).toBe(1);
+    expect(withCompose.stdout + withCompose.stderr).toContain("not a TTY");
+  }, 20000);
+
   it("generate exits 1 without --provider in non-interactive mode", async () => {
     const { code, stdout, stderr } = await runCli([
       "generate",
