@@ -40,9 +40,10 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
-        # Fallback if OIDC trusted publishing is not configured yet:
-        #   env:
-        #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        env:
+          # First publish uses a token; switch to OIDC trusted publishing once
+          # the package exists on npmjs.com.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify publish
         run: npm view dodeploy version

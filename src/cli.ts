@@ -8,7 +8,7 @@ import { providers } from "./providers/index.js";
 import { applyRules } from "./rules/index.js";
 import { renderBanner } from "./ui/banner.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 type ProviderId = "aws" | "gcp" | "azure";
 
