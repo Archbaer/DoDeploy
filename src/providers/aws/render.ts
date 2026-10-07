@@ -1,6 +1,6 @@
 import type { ComputeUnit, EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { quote, tfName } from "../../render/hcl.js";
+import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 import { resolveDatabaseVersion } from "../database-version.js";
 
@@ -11,6 +11,34 @@ const fargateUnits = (ir: EnrichedIR) =>
   ir.compute.filter(
     (u) => u.kind !== "stateful" && (u.target === undefined || u.target === "fargate"),
   );
+
+// Supported AWS Fargate task sizes: [cpu units, min memory MiB, max memory MiB]
+// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html
+const FARGATE_SIZES: readonly (readonly [number, number, number])[] = [
+  [256, 512, 2048],
+  [512, 1024, 4096],
+  [1024, 2048, 8192],
+  [2048, 4096, 16384],
+  [4096, 8192, 30720],
+  [8192, 16384, 61440],
+  [16384, 32768, 122880],
+];
+
+/** Snap requested cpu/memory to the smallest supported Fargate task size. */
+const fargateSize = (unit: ComputeUnit): { cpu: number; memory: number; adjustments: string[] } => {
+  const wantCpu = unit.cpu !== undefined ? Math.max(1, Math.round(unit.cpu * 1024)) : 512;
+  const wantMem = unit.memoryMb ?? 1024;
+  const size =
+    FARGATE_SIZES.find(([cpu, , max]) => cpu >= wantCpu && wantMem <= max) ??
+    FARGATE_SIZES[FARGATE_SIZES.length - 1]!;
+  const [cpu, minMem, maxMem] = size;
+  const step = cpu >= 8192 ? 4096 : 1024;
+  const memory = Math.min(maxMem, Math.max(minMem, Math.round(wantMem / step) * step));
+  const adjustments: string[] = [];
+  if (cpu !== wantCpu) adjustments.push(`cpu ${wantCpu} → ${cpu}`);
+  if (memory !== wantMem) adjustments.push(`memory ${wantMem}MiB → ${memory}MiB`);
+  return { cpu, memory, adjustments };
+};
 const ec2Units = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "ec2");
 const apprunnerUnits = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "apprunner");
 
@@ -61,23 +89,31 @@ provider "aws" {
 `;
 
 const variablesTf = (ir: EnrichedIR): string => {
+  // Every unit without an image references this variable — declare it whether or
+  // not a build context exists (interview-only units have neither).
   const builderVars = ir.compute
-    .filter((u) => u.buildContext !== undefined && u.image === undefined)
+    .filter((u) => u.image === undefined)
     .map(
       (u) => `variable "${tfName(u.name)}_image" {
   type        = string
-  description = ${quote(`Full image URI for ${u.name} (build from ${u.buildContext ?? "context"} and push to ECR)`)}
+  description = ${quote(
+    u.buildContext !== undefined
+      ? `Full image URI for ${u.name} (build from ${u.buildContext} and push to ECR)`
+      : `Full image URI for ${u.name} — push to ECR and set via TF_VAR_${tfName(u.name)}_image`,
+  )}
 }
 `,
     )
     .join("\n");
   return `${HEADER}
 variable "project_name" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.name)}
 }
 
 variable "region" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.region)}
 }
 
 variable "vpc_cidr" {
@@ -339,8 +375,7 @@ const taskDefSection = (ir: EnrichedIR): string => {
   return units
     .map((u) => {
       const label = tfName(u.name);
-      const cpu = u.cpu !== undefined ? Math.round(u.cpu * 1024) : 512;
-      const memory = u.memoryMb ?? 1024;
+      const { cpu, memory } = fargateSize(u);
       const portMappings =
         u.ports.length > 0
           ? `    portMappings = [${u.ports
@@ -359,6 +394,14 @@ const taskDefSection = (ir: EnrichedIR): string => {
         .map(([key, value]) => `      { name = ${quote(key)}, value = ${quote(value)} },`)
         .join("\n");
       const environment = envVars.length > 0 ? `    environment = [\n${envVars}\n    ]` : "";
+      const commandEntry = [
+        u.entrypoint !== undefined
+          ? `      entryPoint = [${u.entrypoint.map(quote).join(", ")}]`
+          : "",
+        u.command !== undefined ? `      command    = [${u.command.map(quote).join(", ")}]` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
       const secretTodo = u.secrets
         .map(
           (key) =>
@@ -377,7 +420,7 @@ const taskDefSection = (ir: EnrichedIR): string => {
       name      = ${quote(label)}
       image     = ${unitImage(u)}
       essential = true
-${portMappings}
+${commandEntry ? `${commandEntry}\n` : ""}${portMappings}
 ${environment}
     }
   ])
@@ -467,7 +510,12 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
         .join("\n");
       const image = u.image ?? `\${var.${tfName(u.name)}_image}`;
       const name = u.name.replace(/[^a-zA-Z0-9_.-]/g, "-");
-      return `${secretTodo}${secretTodo ? "\n" : ""}docker run -d --restart unless-stopped --name ${name} ${ports}${env ? ` ${env}` : ""} ${esc(image)}`;
+      // docker run CLI: --entrypoint takes the binary; remaining entrypoint args and the
+      // command follow the image, each shell-quoted, preserving the exec-form argv order.
+      const entrypoint =
+        u.entrypoint !== undefined ? ` --entrypoint ${esc(u.entrypoint[0] ?? "")}` : "";
+      const args = [...(u.entrypoint?.slice(1) ?? []), ...(u.command ?? [])].map(esc).join(" ");
+      return `${secretTodo}${secretTodo ? "\n" : ""}docker run -d --restart unless-stopped --name ${name}${entrypoint} ${ports}${env ? ` ${env}` : ""} ${esc(image)}${args ? ` ${args}` : ""}`;
     })
     .join("\n");
   return `data "aws_ami" "al2023" {
@@ -540,7 +588,7 @@ ${
       image_identifier      = ${unitImage(u)}
       image_repository_type = ${quote(repoType)}
       image_configuration {
-        port = "${port}"${envVars ? `\n        runtime_environment_variables = { ${envVars} }` : ""}
+        port = "${port}"${envVars ? `\n        runtime_environment_variables = { ${envVars} }` : ""}${u.command !== undefined && u.command.length > 0 ? `\n        start_command = ${quote(u.command.join(" "))}` : ""}
       }
     }
   }
@@ -703,6 +751,10 @@ const outputsTf = (ir: EnrichedIR): string => {
 
 export function renderAws(ir: EnrichedIR): RenderResult {
   const diagnostics: RenderResult["diagnostics"] = [];
+  const dupError = duplicateLabelError(ir.compute.map((u) => u.name));
+  if (dupError !== undefined) {
+    diagnostics.push({ stage: "render", severity: "error", message: dupError });
+  }
 
   for (const datastore of ir.datastores) {
     if (datastore.engine === "postgres" || datastore.engine === "mysql") {
@@ -723,6 +775,25 @@ export function renderAws(ir: EnrichedIR): RenderResult {
       routeTodos.push(
         `# TODO(dodeploy): ${JSON.stringify(unit.name)}:${port.container}: ${reason}`,
       );
+    }
+  }
+  for (const unit of fargateUnits(ir)) {
+    const { adjustments } = fargateSize(unit);
+    if (adjustments.length > 0) {
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}: requested task size is not a supported Fargate combination — snapped ${adjustments.join(", ")}`,
+      });
+    }
+  }
+  for (const unit of apprunnerUnits(ir)) {
+    if (unit.entrypoint !== undefined && unit.entrypoint.length > 0) {
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}: entrypoint is not supported by App Runner and was dropped; bake it into the image or use command (rendered as start_command) instead`,
+      });
     }
   }
   for (const unit of ir.compute) {
@@ -775,15 +846,18 @@ export function renderAws(ir: EnrichedIR): RenderResult {
     ],
     ir,
   );
-  const compute = renderSections(
-    [
-      { name: "ecs-cluster", builder: ecsClusterSection },
-      { name: "task-definitions", builder: taskDefSection },
-      { name: "ecs-services", builder: ecsServiceSection },
-      { name: "stateful", builder: statefulSection },
-    ],
-    ir,
-  );
+  const compute =
+    dupError !== undefined
+      ? { content: "", diagnostics: [] }
+      : renderSections(
+          [
+            { name: "ecs-cluster", builder: ecsClusterSection },
+            { name: "task-definitions", builder: taskDefSection },
+            { name: "ecs-services", builder: ecsServiceSection },
+            { name: "stateful", builder: statefulSection },
+          ],
+          ir,
+        );
   const data = renderSections(
     [
       { name: "datastore-network", builder: datastoreNetworkSection },
@@ -802,7 +876,7 @@ export function renderAws(ir: EnrichedIR): RenderResult {
     "providers.tf": providersTf(),
     "variables.tf": variablesTf(ir),
     "network.tf": `${HEADER}${routeTodos.join("\n")}\n${network.content}`,
-    "compute.tf": `${HEADER}${compute.content}`,
+    "compute.tf": `${HEADER}${dupError !== undefined ? `# TODO(dodeploy): ${dupError}\n` : compute.content}`,
     "data.tf": `${HEADER}${data.content}`,
     "outputs.tf": outputsTf(ir),
   };

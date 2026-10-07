@@ -67,6 +67,71 @@ describe("aws renderer", () => {
     expect(Object.keys(files).sort()).toContain("ec2.tf");
   });
 
+  it("renders command and entrypoint overrides per AWS target (issue #25)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "worker",
+          source: "compose",
+          kind: "worker",
+          image: "alpine:3",
+          target: "fargate",
+          entrypoint: ["/bin/sh"],
+          command: ["-c", "sleep infinity"],
+        },
+        {
+          name: "box",
+          source: "compose",
+          kind: "worker",
+          image: "alpine:3",
+          target: "ec2",
+          entrypoint: ["/bin/sh"],
+          command: ["-c", "sleep infinity"],
+        },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          target: "apprunner",
+          command: ["nginx", "-g", "daemon off;"],
+          entrypoint: ["/custom-entry.sh"],
+        },
+      ],
+    });
+    const { files, diagnostics } = awsRulePack.render(enriched(ir));
+    expect(files["compute.tf"]).toContain('entryPoint = ["/bin/sh"]');
+    expect(files["compute.tf"]).toContain('command    = ["-c", "sleep infinity"]');
+    const run = files["ec2.tf"]?.split("\n").find((l) => l.includes("--name box")) ?? "";
+    expect(run).toContain("--entrypoint '/bin/sh'");
+    expect(run.endsWith("'-c' 'sleep infinity'")).toBe(true);
+    expect(files["apprunner.tf"]).toContain('start_command = "nginx -g daemon off;"');
+    expect(
+      diagnostics.some((d) => d.message.includes("entrypoint") && d.message.includes("App Runner")),
+    ).toBe(true);
+  });
+
+  it("snaps unsupported Fargate cpu/memory combinations with a diagnostic (issue #36)", () => {
+    const cases: [number, number, string, string, boolean][] = [
+      [0.1, 128, '"256"', '"512"', true],
+      [1, 512, '"1024"', '"2048"', true],
+      [0.5, 512, '"512"', '"1024"', true],
+      [0.5, 2048, '"512"', '"2048"', false],
+      [0.25, 1024, '"256"', '"1024"', false],
+    ];
+    for (const [cpu, memoryMb, wantCpu, wantMem, shouldWarn] of cases) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [{ name: "api", source: "compose", kind: "web", image: "nginx", cpu, memoryMb }],
+      });
+      const { files, diagnostics } = awsRulePack.render(enriched(ir));
+      expect(files["compute.tf"]).toContain(`cpu                      = ${wantCpu}`);
+      expect(files["compute.tf"]).toContain(`memory                   = ${wantMem}`);
+      expect(diagnostics.some((d) => d.message.includes("Fargate combination"))).toBe(shouldWarn);
+    }
+  });
+
   it("never emits detected secret values for any target, including mixed targets (issue #30)", () => {
     for (const target of ["ec2", "apprunner", "fargate"] as const) {
       const ir = projectIRSchema.parse({

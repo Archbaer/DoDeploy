@@ -1,6 +1,6 @@
 import type { EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { quote, tfName } from "../../render/hcl.js";
+import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 
 import { resolveDatabaseVersion } from "../database-version.js";
@@ -24,23 +24,31 @@ provider "azurerm" {
 `;
 
 const variablesTf = (ir: EnrichedIR): string => {
+  // Every unit without an image references this variable — declare it whether or
+  // not a build context exists (interview-only units have neither).
   const builderVars = ir.compute
-    .filter((u) => u.buildContext !== undefined && u.image === undefined)
+    .filter((u) => u.image === undefined)
     .map(
       (u) => `variable "${tfName(u.name)}_image" {
   type        = string
-  description = ${quote(`Full image URI for ${u.name} (build from ${u.buildContext ?? "context"} and push to ACR)`)}
+  description = ${quote(
+    u.buildContext !== undefined
+      ? `Full image URI for ${u.name} (build from ${u.buildContext} and push to ACR)`
+      : `Full image URI for ${u.name} — push to ACR and set via TF_VAR_${tfName(u.name)}_image`,
+  )}
 }
 `,
     )
     .join("\n");
   return `${HEADER}
 variable "project_name" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.name)}
 }
 
 variable "region" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.region)}
 }
 
 variable "vpc_cidr" {
@@ -87,7 +95,8 @@ const computeSection = (ir: EnrichedIR): string =>
     .filter((u) => u.kind !== "stateful")
     .map((u) => {
       const label = tfName(u.name);
-      const publicPort = u.ports.find((p) => p.public);
+      // Container Apps ingress is TCP-only; UDP public ports are reported in renderAzure.
+      const publicPort = u.ports.find((p) => p.public && p.protocol === "tcp");
       const image =
         u.image !== undefined
           ? quote(u.image)
@@ -106,6 +115,12 @@ const computeSection = (ir: EnrichedIR): string =>
         )
         .join("\n");
       const env = envVars.length > 0 ? `\n${envVars}` : "";
+      // Container Apps: entrypoint → command, command → args.
+      const commandArgs =
+        (u.entrypoint !== undefined
+          ? `\n        command = [${u.entrypoint.map(quote).join(", ")}]`
+          : "") +
+        (u.command !== undefined ? `\n        args    = [${u.command.map(quote).join(", ")}]` : "");
       const ingress =
         u.kind === "web" && publicPort !== undefined
           ? `
@@ -119,18 +134,22 @@ const computeSection = (ir: EnrichedIR): string =>
     }
   }`
           : "";
+      // Apps without ingress need a positive minimum or they scale to zero with
+      // no restart trigger (https://learn.microsoft.com/en-us/azure/container-apps/scale-app).
+      const minReplicas =
+        u.kind === "web" && publicPort !== undefined ? "" : "\n    min_replicas = 1";
       return `${secretTodos.length > 0 ? `${secretTodos}\n` : ""}resource "azurerm_container_app" "${label}" {
   name                         = ${quote(label)}
   resource_group_name          = azurerm_resource_group.main.name
   container_app_environment_id = azurerm_container_app_environment.main.id
   revision_mode                = "Single"
 
-  template {
+  template {${minReplicas}
     container {
       name   = ${quote(label)}
       image  = ${image}
       cpu    = ${u.cpu ?? 0.5}
-      memory = "${u.memoryMb ?? 1024}Mi"${env}
+      memory = "${u.memoryMb ?? 1024}Mi"${commandArgs}${env}
     }
   }
 ${ingress}
@@ -243,14 +262,42 @@ export function renderAzure(ir: EnrichedIR): RenderResult {
     }
   }
 
+  const dupError = duplicateLabelError(ir.compute.map((u) => u.name));
+  if (dupError !== undefined) {
+    diagnostics.push({ stage: "render", severity: "error", message: dupError });
+  }
+
+  // Every public port that won't be exposed must be visible to the user.
+  for (const unit of ir.compute.filter((u) => u.kind !== "stateful")) {
+    const publicPorts = unit.ports.filter((p) => p.public);
+    const served = unit.kind === "web" ? publicPorts.find((p) => p.protocol === "tcp") : undefined;
+    for (const port of publicPorts) {
+      if (port === served) continue;
+      const reason =
+        port.protocol === "udp"
+          ? "UDP is not supported by Container Apps ingress"
+          : unit.kind !== "web"
+            ? "apps without ingress expose no ports"
+            : "Container Apps ingress supports a single target port";
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}:${port.container}/${port.protocol} not exposed: ${reason}; route this port separately`,
+      });
+    }
+  }
+
   const network = renderSections([{ name: "network", builder: networkSection }], ir);
-  const compute = renderSections(
-    [
-      { name: "container-apps", builder: computeSection },
-      { name: "stateful", builder: statefulSection },
-    ],
-    ir,
-  );
+  const compute =
+    dupError !== undefined
+      ? { content: "", diagnostics: [] }
+      : renderSections(
+          [
+            { name: "container-apps", builder: computeSection },
+            { name: "stateful", builder: statefulSection },
+          ],
+          ir,
+        );
   const data = renderSections(
     [
       ...ir.datastores.map((d) => ({
@@ -269,7 +316,7 @@ export function renderAzure(ir: EnrichedIR): RenderResult {
       "providers.tf": providersTf(),
       "variables.tf": variablesTf(ir),
       "network.tf": `${HEADER}${network.content}`,
-      "compute.tf": `${HEADER}${compute.content}`,
+      "compute.tf": `${HEADER}${dupError !== undefined ? `# TODO(dodeploy): ${dupError}\n` : compute.content}`,
       "data.tf": `${HEADER}${data.content}`,
       "outputs.tf": outputsTf(ir),
     },

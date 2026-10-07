@@ -33,6 +33,49 @@ describe("gcp renderer", () => {
     );
   });
 
+  it("renders entrypoint/command as command/args on containers (issue #25)", () => {
+    for (const pack of [gcpRulePack, azureRulePack]) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [
+          {
+            name: "worker",
+            source: "compose",
+            kind: "worker",
+            image: "alpine:3",
+            entrypoint: ["/bin/sh"],
+            command: ["-c", "sleep infinity"],
+          },
+        ],
+      });
+      const { files } = pack.render(enriched(pack.rules, ir));
+      expect(files["compute.tf"]).toContain('command = ["/bin/sh"]');
+      expect(files["compute.tf"]).toContain('args    = ["-c", "sleep infinity"]');
+    }
+  });
+
+  it("renders background-only workers as Cloud Run jobs, not HTTP services (issue #34)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "worker", source: "compose", kind: "worker", image: "my-worker:1" },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, protocol: "tcp", public: true }],
+        },
+      ],
+    });
+    const { files } = gcpRulePack.render(enriched(gcpRulePack.rules, ir));
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_job" "worker"');
+    expect(files["compute.tf"]).not.toContain('resource "google_cloud_run_v2_service" "worker"');
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_service" "web"');
+    expect(files["outputs.tf"]).not.toContain("google_cloud_run_v2_service.worker");
+    expect(files["outputs.tf"]).toContain("google_cloud_run_v2_service.web.uri");
+  });
+
   it("renders Cloud Run, Cloud SQL, Memorystore and GCS", () => {
     const { files } = gcpRulePack.render(enriched(gcpRulePack.rules));
     expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_service" "api"');
@@ -51,6 +94,34 @@ describe("gcp renderer", () => {
 });
 
 describe("azure renderer", () => {
+  it("keeps background workers alive with min_replicas and leaves web scaling unchanged (issue #35)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "worker", source: "compose", kind: "worker", image: "my-worker:1" },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, protocol: "tcp", public: true }],
+        },
+      ],
+    });
+    const { files } = azureRulePack.render(enriched(azureRulePack.rules, ir));
+    const compute = files["compute.tf"] ?? "";
+    const block = (name: string) =>
+      (compute.split(`resource "azurerm_container_app" "${name}"`)[1] ?? "").split(
+        'resource "',
+      )[0] ?? "";
+    const workerBlock = block("worker");
+    const webBlock = block("web");
+    expect(workerBlock).toContain("min_replicas = 1");
+    expect(workerBlock).not.toContain("ingress {");
+    expect(webBlock).toContain("ingress {");
+    expect(webBlock).not.toContain("min_replicas");
+  });
+
   it("renders the expected file set", () => {
     const { files } = azureRulePack.render(enriched(azureRulePack.rules));
     expect(Object.keys(files).sort()).toEqual(
@@ -81,7 +152,7 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain("TODO(dodeploy)");
     expect(files["data.tf"]).toContain('resource "google_sql_database_instance" "legacy"');
     expect(files["data.tf"]).toContain("MYSQL_8_0");
-    expect(files["compute.tf"]).toContain("INGRESS_TRAFFIC_INTERNAL_ONLY");
+    expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_job" "w"');
   });
 
   it("renders Azure object storage and explicitly defers volume mounts and Cosmos DB", () => {
@@ -102,6 +173,124 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
     expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
   });
+});
+
+describe("omitted public ports and UDP visibility (issue #37)", () => {
+  const packs = { gcp: gcpRulePack, azure: azureRulePack };
+  const ir = () =>
+    projectIRSchema.parse({
+      meta: { name: "probe" },
+      compute: [
+        {
+          name: "api",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [
+            { host: 8080, container: 80, protocol: "tcp", public: true },
+            { host: 8443, container: 443, protocol: "tcp", public: true },
+            { host: 9000, container: 9000, protocol: "udp", public: true },
+          ],
+        },
+      ],
+    });
+
+  it.each(Object.entries(packs))(
+    "%s serves the first TCP port and reports the rest",
+    (_n, pack) => {
+      const { files, diagnostics } = pack.render(enriched(pack.rules, ir()));
+      expect(files["compute.tf"]).toMatch(/(container_port|target_port)\s*=\s*80/);
+      const omitted = diagnostics.filter((d) => d.message.includes("not exposed"));
+      expect(omitted.some((d) => d.message.includes(":443/tcp"))).toBe(true);
+      expect(
+        omitted.some((d) => d.message.includes(":9000/udp") && d.message.includes("UDP")),
+      ).toBe(true);
+      expect(omitted.some((d) => d.message.includes(":80/"))).toBe(false);
+    },
+  );
+
+  it.each(Object.entries(packs))(
+    "%s reports all public ports on UDP-only and worker units",
+    (_n, pack) => {
+      const udpOnly = projectIRSchema.parse({
+        meta: { name: "probe" },
+        compute: [
+          {
+            name: "dns",
+            source: "compose",
+            kind: "web",
+            image: "dns:1",
+            ports: [{ host: 5353, container: 5353, protocol: "udp", public: true }],
+          },
+          {
+            name: "worker",
+            source: "compose",
+            kind: "worker",
+            image: "w:1",
+            ports: [{ host: 9090, container: 9090, protocol: "tcp", public: true }],
+          },
+        ],
+      });
+      const { files, diagnostics } = pack.render(enriched(pack.rules, udpOnly));
+      expect(files["compute.tf"]).not.toMatch(/(container_port|target_port)\s*=\s*5353/);
+      expect(files["compute.tf"]).not.toMatch(/(container_port|target_port)\s*=\s*9090/);
+      expect(diagnostics.some((d) => d.message.includes(":5353/udp"))).toBe(true);
+      expect(diagnostics.some((d) => d.message.includes(":9090/tcp"))).toBe(true);
+    },
+  );
+});
+
+describe("duplicate Terraform labels (issue #33)", () => {
+  const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+  it.each(Object.entries(packs))(
+    "%s rejects colliding labels with an error diagnostic instead of invalid output",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "probe" },
+        compute: [
+          { name: "api_web", source: "compose", kind: "web", image: "nginx" },
+          { name: "api-web", source: "compose", kind: "web", image: "nginx" },
+        ],
+      });
+      const { files, diagnostics } = pack.render(ir);
+      expect(diagnostics.some((d) => d.severity === "error" && d.message.includes("api-web"))).toBe(
+        true,
+      );
+      expect(files["compute.tf"]).toContain("TODO(dodeploy)");
+      expect(files["compute.tf"]).not.toContain('resource "');
+    },
+  );
+});
+
+describe("interview-only image variables and meta defaults (issues #38, #39)", () => {
+  const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+
+  it.each(Object.entries(packs))(
+    "%s declares the image variable for image-less units",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "app" },
+        compute: [{ name: "api", source: "interview", kind: "web" }],
+      });
+      const { files } = pack.render(ir);
+      expect(files["compute.tf"]).toContain("var.api_image");
+      expect(files["variables.tf"]).toContain('variable "api_image"');
+      expect(files["variables.tf"]).toContain("TF_VAR_api_image");
+    },
+  );
+
+  it.each(Object.entries(packs))(
+    "%s reflects the selected region and project name as variable defaults",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "custom-project", region: "europe-west1" },
+        compute: [],
+      });
+      const { files } = pack.render(ir);
+      expect(files["variables.tf"]).toContain('default = "custom-project"');
+      expect(files["variables.tf"]).toContain('default = "europe-west1"');
+    },
+  );
 });
 
 describe("HCL literal preservation (issue #32)", () => {

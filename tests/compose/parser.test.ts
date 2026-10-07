@@ -1,7 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { parseComposeFile } from "../../src/compose/index.js";
+import { parseCompose, parseComposeFile } from "../../src/compose/index.js";
 
 const fixture = (name: string) => new URL(`./fixtures/${name}`, import.meta.url);
+
+describe("YAML merge keys (issue #29)", () => {
+  it("resolves inherited image and environment from anchors", () => {
+    const result = parseCompose(
+      'x-common: &common\n  image: nginx\n  environment:\n    MODE: production\nservices:\n  web:\n    <<: *common\n    ports: ["8080:80"]\n',
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.services.web?.image).toBe("nginx");
+      expect(result.value.services.web?.environment).toEqual({ MODE: "production" });
+    }
+  });
+
+  it("lets explicit child keys override merged values", () => {
+    const result = parseCompose(
+      "x-common: &common\n  image: nginx\n  environment:\n    MODE: staging\nservices:\n  web:\n    <<: *common\n    image: redis\n    environment:\n      MODE: production\n",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.services.web?.image).toBe("redis");
+      expect(result.value.services.web?.environment).toEqual({ MODE: "production" });
+    }
+  });
+
+  it("rejects unresolved merge aliases instead of silently discarding them", () => {
+    const result = parseCompose("services:\n  web:\n    <<: *missing\n    image: nginx\n");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics[0]?.stage).toBe("parse");
+  });
+});
 
 describe("parseComposeFile", () => {
   it("parses a valid compose file", () => {

@@ -23,6 +23,17 @@ const ENGINE_PORTS: Record<string, number> = {
 
 const SECRET_KEY = /(PASS|SECRET|TOKEN|KEY|URL|CRED)/i;
 
+/**
+ * Compose allows string or list forms. A string command runs through a shell
+ * (matching Compose string semantics); a string entrypoint is a single binary.
+ * Explicitly empty lists are preserved — they clear the image default.
+ */
+const toArgv = (value: string | string[] | undefined, shellWrap: boolean): string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return value;
+  return shellWrap ? ["sh", "-c", value] : [value];
+};
+
 export function normalizeCompose(compose: ComposeFile): NormalizeResult {
   const diagnostics: Diagnostic[] = [];
   const compute: ComputeUnit[] = [];
@@ -90,6 +101,8 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
 
     const buildContext =
       typeof service.build === "string" ? service.build : (service.build?.context ?? undefined);
+    const command = toArgv(service.command, true);
+    const entrypoint = toArgv(service.entrypoint, false);
 
     compute.push({
       name: serviceName,
@@ -102,6 +115,8 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
       ...(memoryMb !== undefined ? { memoryMb } : {}),
       env,
       secrets: Object.keys(env).filter((key) => SECRET_KEY.test(key)),
+      ...(command !== undefined ? { command } : {}),
+      ...(entrypoint !== undefined ? { entrypoint } : {}),
       ...(healthcheck !== undefined ? { healthcheck } : {}),
       dependsOn: service.dependsOn ?? [],
     });

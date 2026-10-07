@@ -46,6 +46,32 @@ describe("normalizeCompose", () => {
     ).toHaveLength(2);
   });
 
+  it("preserves command and entrypoint overrides in list, string and empty forms (issue #25)", () => {
+    const file = composeFileSchema.parse({
+      services: {
+        list: { image: "alpine:3", entrypoint: ["/bin/sh"], command: ["-c", "sleep infinity"] },
+        str: { image: "alpine:3", entrypoint: "/entry.sh", command: "bundle exec thin -p 3000" },
+        empty: { image: "alpine:3", command: [] },
+        plain: { image: "alpine:3" },
+      },
+    });
+    const result = normalizeCompose(file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byName = new Map(result.value.compute.map((u) => [u.name, u]));
+    expect(byName.get("list")).toMatchObject({
+      entrypoint: ["/bin/sh"],
+      command: ["-c", "sleep infinity"],
+    });
+    expect(byName.get("str")).toMatchObject({
+      entrypoint: ["/entry.sh"],
+      command: ["sh", "-c", "bundle exec thin -p 3000"],
+    });
+    expect(byName.get("empty")?.command).toEqual([]);
+    expect(byName.get("plain")?.command).toBeUndefined();
+    expect(byName.get("plain")?.entrypoint).toBeUndefined();
+  });
+
   it("detects datastore images and extracts engine and version", () => {
     const result = normalizeCompose(load("web-db-redis.yaml"));
     expect(result.ok).toBe(true);

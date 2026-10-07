@@ -38,6 +38,27 @@ describe("runInterview", () => {
     expect(result.value.storage).toEqual([]);
   });
 
+  it("rejects duplicate service names with a warning (issue #33)", async () => {
+    const driver = new ScriptedDriver([
+      "gcp",
+      "balanced",
+      "europe-west1",
+      "containers",
+      "api, api, worker",
+      "worker",
+      false,
+      false,
+    ]);
+    const ir = projectIRSchema.parse({ meta: { name: "greenfield", source: "interview" } });
+    const result = await runInterview(ir, driver);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute.map((u) => u.name)).toEqual(["api", "worker"]);
+    expect(result.diagnostics.some((d) => d.message.includes('duplicate service name "api"'))).toBe(
+      true,
+    );
+  });
+
   it("marks VM workloads as stateful", async () => {
     const driver = new ScriptedDriver([
       "aws",
