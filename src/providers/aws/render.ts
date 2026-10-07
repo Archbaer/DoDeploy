@@ -89,23 +89,31 @@ provider "aws" {
 `;
 
 const variablesTf = (ir: EnrichedIR): string => {
+  // Every unit without an image references this variable — declare it whether or
+  // not a build context exists (interview-only units have neither).
   const builderVars = ir.compute
-    .filter((u) => u.buildContext !== undefined && u.image === undefined)
+    .filter((u) => u.image === undefined)
     .map(
       (u) => `variable "${tfName(u.name)}_image" {
   type        = string
-  description = "Full image URI for ${u.name} (build from ${u.buildContext ?? "context"} and push to ECR)"
+  description = "${
+    u.buildContext !== undefined
+      ? `Full image URI for ${u.name} (build from ${u.buildContext} and push to ECR)`
+      : `Full image URI for ${u.name} — push to ECR and set via TF_VAR_${tfName(u.name)}_image`
+  }"
 }
 `,
     )
     .join("\n");
   return `${HEADER}
 variable "project_name" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.name)}
 }
 
 variable "region" {
-  type = string
+  type    = string
+  default = ${quote(ir.meta.region)}
 }
 
 variable "vpc_cidr" {

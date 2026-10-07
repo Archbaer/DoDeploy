@@ -261,3 +261,34 @@ describe("duplicate Terraform labels (issue #33)", () => {
     },
   );
 });
+
+describe("interview-only image variables and meta defaults (issues #38, #39)", () => {
+  const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+
+  it.each(Object.entries(packs))(
+    "%s declares the image variable for image-less units",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "app" },
+        compute: [{ name: "api", source: "interview", kind: "web" }],
+      });
+      const { files } = pack.render(ir);
+      expect(files["compute.tf"]).toContain("var.api_image");
+      expect(files["variables.tf"]).toContain('variable "api_image"');
+      expect(files["variables.tf"]).toContain("TF_VAR_api_image");
+    },
+  );
+
+  it.each(Object.entries(packs))(
+    "%s reflects the selected region and project name as variable defaults",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "custom-project", region: "europe-west1" },
+        compute: [],
+      });
+      const { files } = pack.render(ir);
+      expect(files["variables.tf"]).toContain('default = "custom-project"');
+      expect(files["variables.tf"]).toContain('default = "europe-west1"');
+    },
+  );
+});
