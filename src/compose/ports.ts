@@ -13,17 +13,30 @@ export function memoryToMb(raw: string): number | undefined {
   return Math.max(1, Math.round(value / 1024));
 }
 
+const DURATION_UNITS: Record<string, number> = {
+  us: 1 / 1_000_000,
+  ms: 1 / 1000,
+  s: 1,
+  m: 60,
+  h: 3600,
+};
+
 export function durationToSeconds(raw: string): number | undefined {
+  // Composite durations ("1m30s") are consumed strictly left to right — any
+  // leading/trailing junk ("bad30s", "-10s") rejects the whole string instead
+  // of silently parsing a suffix.
+  let rest = raw.trim();
+  if (rest === "" || rest.startsWith("-")) return undefined;
   let total = 0;
-  let matched = false;
-  for (const match of raw.matchAll(/(\d+)\s*(ms|s|m|h)/g)) {
-    matched = true;
-    const value = Number(match[1]);
-    const unit = match[2];
-    total +=
-      unit === "h" ? value * 3600 : unit === "m" ? value * 60 : unit === "s" ? value : value / 1000;
+  while (rest.length > 0) {
+    const match = /^(\d+(?:\.\d+)?)(us|ms|s|m|h)/.exec(rest);
+    if (!match) return undefined;
+    total += Number(match[1]) * (DURATION_UNITS[match[2] as string] ?? 0);
+    rest = rest.slice(match[0].length);
   }
-  return matched ? Math.round(total) : undefined;
+  // Provider bounds: healthcheck intervals/timeouts must be positive, so a
+  // positive sub-second duration clamps up to 1s rather than flooring to 0.
+  return Math.max(1, Math.round(total));
 }
 
 /** Host IPs that mean "all interfaces" — anything else explicit is a restricted binding. */

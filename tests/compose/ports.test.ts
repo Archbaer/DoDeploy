@@ -34,6 +34,16 @@ describe("durationToSeconds", () => {
     ["2h", 7200],
     ["500ms", 1],
     ["nope", undefined],
+    // Fractions, sub-second units and composites (issue #27).
+    ["1.5s", 2],
+    ["100ms", 1],
+    ["1us", 1],
+    ["1h30m45s", 5445],
+    // Positive durations never floor to zero; junk and negatives are rejected whole.
+    ["0.1s", 1],
+    ["bad30s", undefined],
+    ["-10s", undefined],
+    ["30", undefined],
   ])("parses %s → %s", (raw, expected) => {
     expect(durationToSeconds(raw)).toBe(expected);
   });

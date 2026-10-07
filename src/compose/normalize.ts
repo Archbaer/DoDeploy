@@ -78,6 +78,20 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
       service.healthcheck?.timeout !== undefined
         ? durationToSeconds(service.healthcheck.timeout)
         : undefined;
+    if (service.healthcheck?.interval !== undefined && intervalSeconds === undefined) {
+      diagnostics.push({
+        stage: "normalize",
+        severity: "warning",
+        message: `service "${serviceName}": cannot parse healthcheck interval "${service.healthcheck.interval}"; using default 30s`,
+      });
+    }
+    if (service.healthcheck?.timeout !== undefined && timeoutSeconds === undefined) {
+      diagnostics.push({
+        stage: "normalize",
+        severity: "warning",
+        message: `service "${serviceName}": cannot parse healthcheck timeout "${service.healthcheck.timeout}"; using default 5s`,
+      });
+    }
     const healthcheck =
       service.healthcheck === undefined || service.healthcheck.disable === true
         ? undefined

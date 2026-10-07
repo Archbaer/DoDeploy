@@ -113,6 +113,27 @@ describe("normalizeCompose", () => {
     expect(api?.healthcheck).toMatchObject({ intervalSeconds: 30, timeoutSeconds: 5, retries: 3 });
   });
 
+  it("warns and falls back to defaults for unparseable healthcheck durations (issue #27)", () => {
+    const file = composeFileSchema.parse({
+      services: {
+        web: {
+          image: "nginx",
+          healthcheck: { test: ["CMD", "true"], interval: "bad30s", timeout: "1.5s" },
+        },
+      },
+    });
+    const result = normalizeCompose(file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const web = result.value.compute[0];
+    expect(web?.healthcheck).toMatchObject({ intervalSeconds: 30, timeoutSeconds: 2 });
+    expect(
+      result.diagnostics.some(
+        (d) => d.severity === "warning" && d.message.includes('interval "bad30s"'),
+      ),
+    ).toBe(true);
+  });
+
   it("flags secret-looking environment keys", () => {
     const result = normalizeCompose(load("web-db-redis.yaml"));
     if (!result.ok) throw new Error("normalize failed");
