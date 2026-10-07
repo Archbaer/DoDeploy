@@ -110,8 +110,12 @@ describe("azure renderer", () => {
     });
     const { files } = azureRulePack.render(enriched(azureRulePack.rules, ir));
     const compute = files["compute.tf"] ?? "";
-    const workerBlock = compute.split('resource "azurerm_container_app" "worker"')[1] ?? "";
-    const webBlock = compute.split('resource "azurerm_container_app" "web"')[1] ?? "";
+    const block = (name: string) =>
+      (compute.split(`resource "azurerm_container_app" "${name}"`)[1] ?? "").split(
+        'resource "',
+      )[0] ?? "";
+    const workerBlock = block("worker");
+    const webBlock = block("web");
     expect(workerBlock).toContain("min_replicas = 1");
     expect(workerBlock).not.toContain("ingress {");
     expect(webBlock).toContain("ingress {");

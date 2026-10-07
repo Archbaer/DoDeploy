@@ -11,6 +11,34 @@ const fargateUnits = (ir: EnrichedIR) =>
   ir.compute.filter(
     (u) => u.kind !== "stateful" && (u.target === undefined || u.target === "fargate"),
   );
+
+// Supported AWS Fargate task sizes: [cpu units, min memory MiB, max memory MiB]
+// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html
+const FARGATE_SIZES: readonly (readonly [number, number, number])[] = [
+  [256, 512, 2048],
+  [512, 1024, 4096],
+  [1024, 2048, 8192],
+  [2048, 4096, 16384],
+  [4096, 8192, 30720],
+  [8192, 16384, 61440],
+  [16384, 32768, 122880],
+];
+
+/** Snap requested cpu/memory to the smallest supported Fargate task size. */
+const fargateSize = (unit: ComputeUnit): { cpu: number; memory: number; adjustments: string[] } => {
+  const wantCpu = unit.cpu !== undefined ? Math.max(1, Math.round(unit.cpu * 1024)) : 512;
+  const wantMem = unit.memoryMb ?? 1024;
+  const size =
+    FARGATE_SIZES.find(([cpu, , max]) => cpu >= wantCpu && wantMem <= max) ??
+    FARGATE_SIZES[FARGATE_SIZES.length - 1]!;
+  const [cpu, minMem, maxMem] = size;
+  const step = cpu >= 8192 ? 4096 : 1024;
+  const memory = Math.min(maxMem, Math.max(minMem, Math.round(wantMem / step) * step));
+  const adjustments: string[] = [];
+  if (cpu !== wantCpu) adjustments.push(`cpu ${wantCpu} → ${cpu}`);
+  if (memory !== wantMem) adjustments.push(`memory ${wantMem}MiB → ${memory}MiB`);
+  return { cpu, memory, adjustments };
+};
 const ec2Units = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "ec2");
 const apprunnerUnits = (ir: EnrichedIR) => ir.compute.filter((u) => u.target === "apprunner");
 
@@ -339,8 +367,7 @@ const taskDefSection = (ir: EnrichedIR): string => {
   return units
     .map((u) => {
       const label = tfName(u.name);
-      const cpu = u.cpu !== undefined ? Math.round(u.cpu * 1024) : 512;
-      const memory = u.memoryMb ?? 1024;
+      const { cpu, memory } = fargateSize(u);
       const portMappings =
         u.ports.length > 0
           ? `    portMappings = [${u.ports
@@ -726,6 +753,16 @@ export function renderAws(ir: EnrichedIR): RenderResult {
       routeTodos.push(
         `# TODO(dodeploy): ${JSON.stringify(unit.name)}:${port.container}: ${reason}`,
       );
+    }
+  }
+  for (const unit of fargateUnits(ir)) {
+    const { adjustments } = fargateSize(unit);
+    if (adjustments.length > 0) {
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}: requested task size is not a supported Fargate combination — snapped ${adjustments.join(", ")}`,
+      });
     }
   }
   for (const unit of apprunnerUnits(ir)) {

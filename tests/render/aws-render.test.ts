@@ -112,6 +112,26 @@ describe("aws renderer", () => {
     ).toBe(true);
   });
 
+  it("snaps unsupported Fargate cpu/memory combinations with a diagnostic (issue #36)", () => {
+    const cases: [number, number, string, string, boolean][] = [
+      [0.1, 128, '"256"', '"512"', true],
+      [1, 512, '"1024"', '"2048"', true],
+      [0.5, 512, '"512"', '"1024"', true],
+      [0.5, 2048, '"512"', '"2048"', false],
+      [0.25, 1024, '"256"', '"1024"', false],
+    ];
+    for (const [cpu, memoryMb, wantCpu, wantMem, shouldWarn] of cases) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [{ name: "api", source: "compose", kind: "web", image: "nginx", cpu, memoryMb }],
+      });
+      const { files, diagnostics } = awsRulePack.render(enriched(ir));
+      expect(files["compute.tf"]).toContain(`cpu                      = ${wantCpu}`);
+      expect(files["compute.tf"]).toContain(`memory                   = ${wantMem}`);
+      expect(diagnostics.some((d) => d.message.includes("Fargate combination"))).toBe(shouldWarn);
+    }
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
