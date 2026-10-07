@@ -1,5 +1,5 @@
 {
-  "name": "dodeploy",
+  "name": "@archbaer/dodeploy",
   "version": "0.3.0",
   "description": "Turn a docker-compose.yaml into deployable Terraform for AWS, GCP and Azure",
   "license": "Apache-2.0",

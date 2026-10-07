@@ -46,7 +46,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify publish
-        run: npm view dodeploy version
+        run: npm view @archbaer/dodeploy version
 
       - name: Create GitHub Release
         run: gh release create "${{ github.ref_name }}" --generate-notes

@@ -21,9 +21,9 @@ Requires Node.js 22.12 or later.
 
 ```bash
 npm install && npm run build
-npx dodeploy doctor docker-compose.yaml        # check your environment
-npx dodeploy analyze docker-compose.yaml --provider aws
-npx dodeploy generate docker-compose.yaml --provider aws
+npx @archbaer/dodeploy doctor docker-compose.yaml        # check your environment
+npx @archbaer/dodeploy analyze docker-compose.yaml --provider aws
+npx @archbaer/dodeploy generate docker-compose.yaml --provider aws
 cd dodeploy-infra && terraform init && terraform plan
 ```
 
@@ -84,13 +84,13 @@ No compose file? Drop the path and `generate` runs an interactive interview
 (`@clack/prompts`) to fill everything in:
 
 ```bash
-npx dodeploy generate --provider gcp
+npx @archbaer/dodeploy generate --provider gcp
 ```
 
 CI-friendly non-interactive runs:
 
 ```bash
-npx dodeploy generate docker-compose.yaml --provider aws --no-interview
+npx @archbaer/dodeploy generate docker-compose.yaml --provider aws --no-interview
 ```
 
 Every recommendation carries a `ruleId`, `rationale` and `costTier` — inspect them
