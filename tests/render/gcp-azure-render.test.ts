@@ -94,6 +94,30 @@ describe("gcp renderer", () => {
 });
 
 describe("azure renderer", () => {
+  it("keeps background workers alive with min_replicas and leaves web scaling unchanged (issue #35)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        { name: "worker", source: "compose", kind: "worker", image: "my-worker:1" },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [{ container: 80, host: 80, protocol: "tcp", public: true }],
+        },
+      ],
+    });
+    const { files } = azureRulePack.render(enriched(azureRulePack.rules, ir));
+    const compute = files["compute.tf"] ?? "";
+    const workerBlock = compute.split('resource "azurerm_container_app" "worker"')[1] ?? "";
+    const webBlock = compute.split('resource "azurerm_container_app" "web"')[1] ?? "";
+    expect(workerBlock).toContain("min_replicas = 1");
+    expect(workerBlock).not.toContain("ingress {");
+    expect(webBlock).toContain("ingress {");
+    expect(webBlock).not.toContain("min_replicas");
+  });
+
   it("renders the expected file set", () => {
     const { files } = azureRulePack.render(enriched(azureRulePack.rules));
     expect(Object.keys(files).sort()).toEqual(

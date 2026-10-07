@@ -125,13 +125,17 @@ const computeSection = (ir: EnrichedIR): string =>
     }
   }`
           : "";
+      // Apps without ingress need a positive minimum or they scale to zero with
+      // no restart trigger (https://learn.microsoft.com/en-us/azure/container-apps/scale-app).
+      const minReplicas =
+        u.kind === "web" && publicPort !== undefined ? "" : "\n    min_replicas = 1";
       return `${secretTodos.length > 0 ? `${secretTodos}\n` : ""}resource "azurerm_container_app" "${label}" {
   name                         = ${quote(label)}
   resource_group_name          = azurerm_resource_group.main.name
   container_app_environment_id = azurerm_container_app_environment.main.id
   revision_mode                = "Single"
 
-  template {
+  template {${minReplicas}
     container {
       name   = ${quote(label)}
       image  = ${image}
