@@ -46,7 +46,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify publish
-        run: npm view @archbaer/dodeploy version
+        # The registry can take minutes to index a fresh package — poll instead
+        # of failing on the first 404.
+        run: |
+          for i in $(seq 1 15); do
+            npm view @archbaer/dodeploy version && exit 0
+            sleep 20
+          done
+          echo "package did not appear on the registry within 5 minutes" >&2
+          exit 1
 
       - name: Create GitHub Release
         run: gh release create "${{ github.ref_name }}" --generate-notes
