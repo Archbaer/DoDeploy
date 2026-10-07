@@ -95,6 +95,18 @@ describe("datastoreEngine", () => {
     expect(datastoreEngine("mariadb:11")).toEqual({ engine: "mysql", version: "11" });
     expect(datastoreEngine("ghcr.io/acme/api:1.0")).toBeUndefined();
   });
+
+  it("detects digest-pinned images and reads versions only from real tags (issue #28)", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    expect(datastoreEngine(`postgres@${digest}`)).toEqual({ engine: "postgres" });
+    expect(datastoreEngine(`postgres:16@${digest}`)).toEqual({ engine: "postgres", version: "16" });
+    expect(datastoreEngine(`mongo:8@${digest}`)).toEqual({ engine: "mongodb", version: "8" });
+    expect(datastoreEngine(`registry.example.com:5000/acme/postgres:17@${digest}`)).toEqual({
+      engine: "postgres",
+      version: "17",
+    });
+    expect(datastoreEngine(`ghcr.io/acme/api:1.0@${digest}`)).toBeUndefined();
+  });
 });
 
 describe("namedVolumeRefs", () => {

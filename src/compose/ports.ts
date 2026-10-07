@@ -92,7 +92,9 @@ export function serviceEnv(service: ComposeService): Record<string, string> {
 }
 
 export function datastoreEngine(image: string): { engine: string; version?: string } | undefined {
-  const name = image.split("/").at(-1) ?? image;
+  // Strip any digest pin first: version comes only from the actual tag.
+  const withoutDigest = image.split("@", 1)[0] ?? image;
+  const name = withoutDigest.split("/").at(-1) ?? withoutDigest;
   const [base, tag] = name.split(":");
   const engines: Record<string, string> = {
     postgres: "postgres",

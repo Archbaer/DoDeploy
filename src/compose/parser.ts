@@ -8,7 +8,8 @@ import { composeFileSchema } from "./schema.js";
 export function parseCompose(content: string): Result<ComposeFile> {
   let document: unknown;
   try {
-    document = parseYaml(content);
+    // merge: resolve YAML merge keys (<<: *anchor) so Compose fragments inherit correctly
+    document = parseYaml(content, { merge: true });
   } catch (error) {
     return err({
       stage: "parse",
