@@ -173,26 +173,91 @@ describe("azure renderer", () => {
     expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
     expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
   });
+});
 
-  describe("duplicate Terraform labels (issue #33)", () => {
-    const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
-    it.each(Object.entries(packs))(
-      "%s rejects colliding labels with an error diagnostic instead of invalid output",
-      (_n, pack) => {
-        const ir = enrichedIRSchema.parse({
-          meta: { name: "probe" },
-          compute: [
-            { name: "api_web", source: "compose", kind: "web", image: "nginx" },
-            { name: "api-web", source: "compose", kind: "web", image: "nginx" },
+describe("omitted public ports and UDP visibility (issue #37)", () => {
+  const packs = { gcp: gcpRulePack, azure: azureRulePack };
+  const ir = () =>
+    projectIRSchema.parse({
+      meta: { name: "probe" },
+      compute: [
+        {
+          name: "api",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          ports: [
+            { host: 8080, container: 80, protocol: "tcp", public: true },
+            { host: 8443, container: 443, protocol: "tcp", public: true },
+            { host: 9000, container: 9000, protocol: "udp", public: true },
           ],
-        });
-        const { files, diagnostics } = pack.render(ir);
-        expect(
-          diagnostics.some((d) => d.severity === "error" && d.message.includes("api-web")),
-        ).toBe(true);
-        expect(files["compute.tf"]).toContain("TODO(dodeploy)");
-        expect(files["compute.tf"]).not.toContain('resource "');
-      },
-    );
-  });
+        },
+      ],
+    });
+
+  it.each(Object.entries(packs))(
+    "%s serves the first TCP port and reports the rest",
+    (_n, pack) => {
+      const { files, diagnostics } = pack.render(enriched(pack.rules, ir()));
+      expect(files["compute.tf"]).toMatch(/(container_port|target_port)\s*=\s*80/);
+      const omitted = diagnostics.filter((d) => d.message.includes("not exposed"));
+      expect(omitted.some((d) => d.message.includes(":443/tcp"))).toBe(true);
+      expect(
+        omitted.some((d) => d.message.includes(":9000/udp") && d.message.includes("UDP")),
+      ).toBe(true);
+      expect(omitted.some((d) => d.message.includes(":80/"))).toBe(false);
+    },
+  );
+
+  it.each(Object.entries(packs))(
+    "%s reports all public ports on UDP-only and worker units",
+    (_n, pack) => {
+      const udpOnly = projectIRSchema.parse({
+        meta: { name: "probe" },
+        compute: [
+          {
+            name: "dns",
+            source: "compose",
+            kind: "web",
+            image: "dns:1",
+            ports: [{ host: 5353, container: 5353, protocol: "udp", public: true }],
+          },
+          {
+            name: "worker",
+            source: "compose",
+            kind: "worker",
+            image: "w:1",
+            ports: [{ host: 9090, container: 9090, protocol: "tcp", public: true }],
+          },
+        ],
+      });
+      const { files, diagnostics } = pack.render(enriched(pack.rules, udpOnly));
+      expect(files["compute.tf"]).not.toMatch(/(container_port|target_port)\s*=\s*5353/);
+      expect(files["compute.tf"]).not.toMatch(/(container_port|target_port)\s*=\s*9090/);
+      expect(diagnostics.some((d) => d.message.includes(":5353/udp"))).toBe(true);
+      expect(diagnostics.some((d) => d.message.includes(":9090/tcp"))).toBe(true);
+    },
+  );
+});
+
+describe("duplicate Terraform labels (issue #33)", () => {
+  const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+  it.each(Object.entries(packs))(
+    "%s rejects colliding labels with an error diagnostic instead of invalid output",
+    (_n, pack) => {
+      const ir = enrichedIRSchema.parse({
+        meta: { name: "probe" },
+        compute: [
+          { name: "api_web", source: "compose", kind: "web", image: "nginx" },
+          { name: "api-web", source: "compose", kind: "web", image: "nginx" },
+        ],
+      });
+      const { files, diagnostics } = pack.render(ir);
+      expect(diagnostics.some((d) => d.severity === "error" && d.message.includes("api-web"))).toBe(
+        true,
+      );
+      expect(files["compute.tf"]).toContain("TODO(dodeploy)");
+      expect(files["compute.tf"]).not.toContain('resource "');
+    },
+  );
 });

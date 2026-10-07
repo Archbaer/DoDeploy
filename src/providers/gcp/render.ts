@@ -111,7 +111,8 @@ const computeSection = (ir: EnrichedIR): string =>
     .filter((u) => u.kind !== "stateful")
     .map((u) => {
       const label = tfName(u.name);
-      const publicPort = u.ports.find((p) => p.public);
+      // Cloud Run ingress is TCP-only; UDP public ports are reported in renderGcp.
+      const publicPort = u.ports.find((p) => p.public && p.protocol === "tcp");
       const image =
         u.image !== undefined
           ? quote(u.image)
@@ -299,6 +300,26 @@ export function renderGcp(ir: EnrichedIR): RenderResult {
   const dupError = duplicateLabelError(ir.compute.map((u) => u.name));
   if (dupError !== undefined) {
     diagnostics.push({ stage: "render", severity: "error", message: dupError });
+  }
+
+  // Every public port that won't be exposed must be visible to the user.
+  for (const unit of ir.compute.filter((u) => u.kind !== "stateful")) {
+    const publicPorts = unit.ports.filter((p) => p.public);
+    const served = unit.kind === "web" ? publicPorts.find((p) => p.protocol === "tcp") : undefined;
+    for (const port of publicPorts) {
+      if (port === served) continue;
+      const reason =
+        port.protocol === "udp"
+          ? "UDP is not supported by Cloud Run ingress"
+          : unit.kind !== "web"
+            ? "Cloud Run jobs have no ingress"
+            : "Cloud Run services support a single container port";
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}:${port.container}/${port.protocol} not exposed: ${reason}; route this port separately`,
+      });
+    }
   }
 
   const network = renderSections([{ name: "network", builder: networkSection }], ir);
