@@ -96,11 +96,11 @@ const variablesTf = (ir: EnrichedIR): string => {
     .map(
       (u) => `variable "${tfName(u.name)}_image" {
   type        = string
-  description = "${
+  description = ${quote(
     u.buildContext !== undefined
       ? `Full image URI for ${u.name} (build from ${u.buildContext} and push to ECR)`
-      : `Full image URI for ${u.name} — push to ECR and set via TF_VAR_${tfName(u.name)}_image`
-  }"
+      : `Full image URI for ${u.name} — push to ECR and set via TF_VAR_${tfName(u.name)}_image`,
+  )}
 }
 `,
     )
@@ -499,8 +499,15 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
     .map((u) => {
       const ports = u.ports.map((p) => `-p ${p.host ?? p.container}:${p.container}`).join(" ");
       const env = Object.entries(u.env)
-        .map(([k, v]) => `-e ${k}=${esc(v)}`)
+        .filter(([k]) => !u.secrets.includes(k))
+        .map(([k, v]) => `-e ${esc(`${k}=${v}`)}`)
         .join(" ");
+      const secretTodo = u.secrets
+        .map(
+          (key) =>
+            `# TODO(dodeploy): ${JSON.stringify(u.name)} secret ${JSON.stringify(key)}: value intentionally omitted; provision it on the host and pass it with -e ${key} (no value) or docker --env-file`,
+        )
+        .join("\n");
       const image = u.image ?? `\${var.${tfName(u.name)}_image}`;
       const name = u.name.replace(/[^a-zA-Z0-9_.-]/g, "-");
       // docker run CLI: --entrypoint takes the binary; remaining entrypoint args and the
@@ -508,7 +515,7 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
       const entrypoint =
         u.entrypoint !== undefined ? ` --entrypoint ${esc(u.entrypoint[0] ?? "")}` : "";
       const args = [...(u.entrypoint?.slice(1) ?? []), ...(u.command ?? [])].map(esc).join(" ");
-      return `docker run -d --restart unless-stopped --name ${name}${entrypoint} ${ports}${env ? ` ${env}` : ""} ${image}${args ? ` ${args}` : ""}`;
+      return `${secretTodo}${secretTodo ? "\n" : ""}docker run -d --restart unless-stopped --name ${name}${entrypoint} ${ports}${env ? ` ${env}` : ""} ${esc(image)}${args ? ` ${args}` : ""}`;
     })
     .join("\n");
   return `data "aws_ami" "al2023" {
@@ -559,9 +566,16 @@ const apprunnerSection = (ir: EnrichedIR): string => {
       const port = u.ports[0]?.container ?? 8080;
       const repoType = u.image?.startsWith("public.ecr.aws") ? "ECR_PUBLIC" : "ECR";
       const envVars = Object.entries(u.env)
+        .filter(([k]) => !u.secrets.includes(k))
         .map(([k, v]) => `${k} = ${quote(v)}`)
         .join(", ");
-      return `resource "aws_apprunner_service" "${label}" {
+      const secretTodo = u.secrets
+        .map(
+          (key) =>
+            `# TODO(dodeploy): ${JSON.stringify(u.name)} secret ${JSON.stringify(key)}: value intentionally omitted; store it in Secrets Manager and wire it via runtime_environment_secrets`,
+        )
+        .join("\n");
+      return `${secretTodo}${secretTodo ? "\n" : ""}resource "aws_apprunner_service" "${label}" {
   service_name = ${quote(`${tfName(ir.meta.name)}-${label}`)}
   source_configuration {
 ${

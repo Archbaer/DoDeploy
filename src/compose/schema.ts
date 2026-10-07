@@ -8,6 +8,7 @@ export const composePortSchema = z.union([
     target: z.number().int().min(1).max(65535),
     published: z.union([z.string(), z.number()]).optional(),
     protocol: z.string().optional(),
+    host_ip: z.string().optional(),
   }),
 ]);
 

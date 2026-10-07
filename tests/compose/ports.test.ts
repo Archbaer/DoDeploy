@@ -75,6 +75,52 @@ describe("toPort", () => {
     expect(parse("abc:3000")).toMatchObject({ container: 3000, public: false });
     expect(diagnostics).toHaveLength(0);
   });
+
+  it("keeps loopback-bound ports internal with a diagnostic instead of widening to public", () => {
+    expect(parse("127.0.0.1:8080:80")).toEqual({
+      container: 80,
+      host: 8080,
+      protocol: "tcp",
+      public: false,
+    });
+    expect(diagnostics[0]?.message).toContain("127.0.0.1");
+    expect(diagnostics[0]?.severity).toBe("warning");
+
+    expect(parse("[::1]:8080:80")).toEqual({
+      container: 80,
+      host: 8080,
+      protocol: "tcp",
+      public: false,
+    });
+    expect(diagnostics[0]?.message).toContain("[::1]");
+
+    expect(parse({ target: 80, published: 8080, host_ip: "127.0.0.1" })).toEqual({
+      container: 80,
+      host: 8080,
+      protocol: "tcp",
+      public: false,
+    });
+    expect(diagnostics[0]?.message).toContain("127.0.0.1");
+
+    expect(parse("localhost:8080:80")).toMatchObject({ host: 8080, public: false });
+    expect(diagnostics[0]?.message).toContain("localhost");
+  });
+
+  it("keeps wildcard and unprefixed host bindings public without diagnostics", () => {
+    expect(parse("0.0.0.0:8080:80")).toMatchObject({ host: 8080, public: true });
+    expect(diagnostics).toHaveLength(0);
+    expect(parse({ target: 80, published: 8080, host_ip: "0.0.0.0" })).toMatchObject({
+      public: true,
+    });
+    expect(diagnostics).toHaveLength(0);
+    expect(parse("8080:80")).toMatchObject({ host: 8080, public: true });
+    expect(diagnostics).toHaveLength(0);
+  });
+
+  it("treats other specific host IPs as restricted bindings", () => {
+    expect(parse("192.168.1.10:8080:80")).toMatchObject({ host: 8080, public: false });
+    expect(diagnostics[0]?.message).toContain("192.168.1.10");
+  });
 });
 
 describe("serviceEnv", () => {

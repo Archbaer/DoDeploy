@@ -132,6 +132,45 @@ describe("aws renderer", () => {
     }
   });
 
+  it("never emits detected secret values for any target, including mixed targets (issue #30)", () => {
+    for (const target of ["ec2", "apprunner", "fargate"] as const) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [
+          {
+            name: "api",
+            source: "compose",
+            kind: "web",
+            image: "nginx",
+            target,
+            env: { API_TOKEN: "TOP_SECRET_PROBE", PLAIN: "visible" },
+            secrets: ["API_TOKEN"],
+          },
+        ],
+      });
+      const { files, diagnostics } = awsRulePack.render(enriched(ir));
+      const all = Object.values(files).join("\n");
+      expect(all).not.toContain("TOP_SECRET_PROBE");
+      expect(all).toContain("visible");
+      expect(diagnostics.some((d) => d.message.includes("API_TOKEN"))).toBe(true);
+    }
+
+    const mixed = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: (["ec2", "apprunner", "fargate"] as const).map((target) => ({
+        name: `api-${target}`,
+        source: "compose",
+        kind: "web",
+        image: "nginx",
+        target,
+        env: { API_TOKEN: "TOP_SECRET_PROBE" },
+        secrets: ["API_TOKEN"],
+      })),
+    });
+    const { files } = awsRulePack.render(enriched(mixed));
+    expect(Object.values(files).join("\n")).not.toContain("TOP_SECRET_PROBE");
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
@@ -240,8 +279,40 @@ describe("aws renderer", () => {
       diagnostics.some((d) => d.message.includes("public port") || d.message.includes("route")),
     ).toBe(false);
     expect(files["ec2.tf"]).toContain("--name web-app");
-    expect(files["ec2.tf"]).toContain("GREETING='hello world'");
-    expect(files["ec2.tf"]).toContain("QUOTE='it'\\''s'");
+    expect(files["ec2.tf"]).toContain("-e 'GREETING=hello world'");
+    expect(files["ec2.tf"]).toContain("-e 'QUOTE=it'\\''s'");
+  });
+
+  it("shell-quotes image and env arguments in the EC2 bootstrap (issue #31)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "api",
+          source: "compose",
+          kind: "web",
+          image: "nginx; printf SHELL_INJECTION_PROBE",
+          target: "ec2",
+          env: { "EVIL;KEY": "v$(rm -rf /)" },
+        },
+        { name: "good", source: "compose", kind: "web", image: "nginx:1.25", target: "ec2" },
+        { name: "builder", source: "compose", kind: "web", buildContext: "./app", target: "ec2" },
+      ],
+    });
+    const { files } = awsRulePack.render(enriched(ir));
+    const lines = files["ec2.tf"]?.split("\n") ?? [];
+    const hostile = lines.find((l) => l.includes("--name api")) ?? "";
+    // Metacharacters, whitespace and command substitution stay inside one single-quoted token.
+    expect(hostile).toContain("'nginx; printf SHELL_INJECTION_PROBE'");
+    expect(hostile).toContain("-e 'EVIL;KEY=v$(rm -rf /)'");
+    expect(hostile).not.toMatch(/[^']nginx;/);
+    // Valid tagged images remain a single shell argument.
+    const good = lines.find((l) => l.includes("--name good")) ?? "";
+    expect(good.endsWith("'nginx:1.25'")).toBe(true);
+    // Build-image variable references stay Terraform-interpolated inside the heredoc.
+    const builder = lines.find((l) => l.includes("--name builder")) ?? "";
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal Terraform reference
+    expect(builder.endsWith("'${var.builder_image}'")).toBe(true);
   });
 
   it("renders apprunner-targeted web services as App Runner services", () => {
