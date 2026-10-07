@@ -1,13 +1,17 @@
 import { execFile } from "node:child_process";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import { renderBanner } from "../src/ui/banner.js";
 
-const runCli = (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
+const runCli = (
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number; stdout: string; stderr: string }> =>
   new Promise((resolve) => {
     execFile(
       process.execPath,
       ["--import", "tsx", "src/bin.ts", ...args],
-      { cwd: process.cwd(), timeout: 10000 },
+      { cwd: process.cwd(), timeout: 10000, env: { ...process.env, ...env } },
       (error, stdout, stderr) => {
         const code =
           error && typeof (error as { code?: number }).code === "number"
@@ -29,6 +33,14 @@ describe("banner", () => {
     const banner = renderBanner("TEST");
     expect(banner).toContain("____");
   });
+
+  it("falls back to a compact single-line banner below the artwork width (issue #44)", () => {
+    const narrow = stripVTControlCharacters(renderBanner("DODEPLOY", 40));
+    expect(narrow.split("\n")).toHaveLength(1);
+    expect(narrow).toContain("docker compose");
+    expect(narrow.length).toBeLessThanOrEqual(40);
+    expect(renderBanner("DODEPLOY", 120).split("\n").length).toBeGreaterThan(3);
+  });
 });
 
 describe("cli", () => {
@@ -40,6 +52,21 @@ describe("cli", () => {
     expect(stdout).toContain("generate");
     expect(stdout).toContain("doctor");
   });
+
+  it.each([["40"], ["80"], ["120"]] as const)(
+    "banner and help fit within %s columns (issue #44)",
+    async (columns) => {
+      const width = Number(columns);
+      for (const args of [[], ["--help"], ["generate", "--help"]]) {
+        const { code, stdout } = await runCli(args, { COLUMNS: columns });
+        expect(code).toBe(0);
+        for (const line of stdout.split("\n")) {
+          expect(stripVTControlCharacters(line).length).toBeLessThanOrEqual(width);
+        }
+      }
+    },
+    30000,
+  );
 
   it("bare invocation prints the banner and help, exits 0", async () => {
     const { code, stdout } = await runCli([]);
