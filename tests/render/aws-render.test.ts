@@ -67,6 +67,45 @@ describe("aws renderer", () => {
     expect(Object.keys(files).sort()).toContain("ec2.tf");
   });
 
+  it("never emits detected secret values for any target, including mixed targets (issue #30)", () => {
+    for (const target of ["ec2", "apprunner", "fargate"] as const) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [
+          {
+            name: "api",
+            source: "compose",
+            kind: "web",
+            image: "nginx",
+            target,
+            env: { API_TOKEN: "TOP_SECRET_PROBE", PLAIN: "visible" },
+            secrets: ["API_TOKEN"],
+          },
+        ],
+      });
+      const { files, diagnostics } = awsRulePack.render(enriched(ir));
+      const all = Object.values(files).join("\n");
+      expect(all).not.toContain("TOP_SECRET_PROBE");
+      expect(all).toContain("visible");
+      expect(diagnostics.some((d) => d.message.includes("API_TOKEN"))).toBe(true);
+    }
+
+    const mixed = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: (["ec2", "apprunner", "fargate"] as const).map((target) => ({
+        name: `api-${target}`,
+        source: "compose",
+        kind: "web",
+        image: "nginx",
+        target,
+        env: { API_TOKEN: "TOP_SECRET_PROBE" },
+        secrets: ["API_TOKEN"],
+      })),
+    });
+    const { files } = awsRulePack.render(enriched(mixed));
+    expect(Object.values(files).join("\n")).not.toContain("TOP_SECRET_PROBE");
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
