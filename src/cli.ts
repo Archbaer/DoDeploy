@@ -116,6 +116,14 @@ const generateCommand = new Command("generate")
         process.exitCode = 1;
         return;
       }
+      if (options.interview && !process.stdin.isTTY) {
+        console.error(
+          "interactive interview requires a terminal (stdin is not a TTY) — " +
+            "re-run with --no-interview and pass --provider/--budget/--name explicitly",
+        );
+        process.exitCode = 1;
+        return;
+      }
       const result = await generateProject({
         composePath: path,
         provider,
