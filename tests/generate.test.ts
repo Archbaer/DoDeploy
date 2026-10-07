@@ -56,6 +56,22 @@ describe("generateProject", async () => {
     },
   );
 
+  it.each(["", "   "])(
+    "rejects an empty/whitespace project name without a stack trace (issue #42)",
+    async (projectName) => {
+      const out = mkdtempSync(join(tmpdir(), "dd-gen-empty-name-"));
+      const result = await generateProject({
+        projectName,
+        outDir: out,
+        interview: true,
+        driver: new ScriptedDriver([]),
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.diagnostics[0]?.message).toContain("project name must not be empty");
+    },
+  );
+
   it("runs compose → rules → render for AWS and writes the fileset", async () => {
     const out = mkdtempSync(join(tmpdir(), "dd-gen-aws-"));
     const result = await generateProject({

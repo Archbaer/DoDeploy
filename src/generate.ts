@@ -63,8 +63,12 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
     if (!options.interview) {
       return fail("no compose file given — drop --no-interview to answer a few questions instead");
     }
+    const projectName = options.projectName ?? "app";
+    if (projectName.trim() === "") {
+      return fail("project name must not be empty — pass --name <name>");
+    }
     ir = projectIRSchema.parse({
-      meta: { name: options.projectName ?? "app", source: "interview" },
+      meta: { name: projectName, source: "interview" },
     });
   }
 
