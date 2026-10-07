@@ -17,6 +17,8 @@ docker-compose.yaml ──► PARSE ──► IR (Zod) ──► RULES ──►
 
 ## Quickstart
 
+Requires Node.js 22.12 or later.
+
 ```bash
 npm install && npm run build
 npx dodeploy doctor docker-compose.yaml        # check your environment
