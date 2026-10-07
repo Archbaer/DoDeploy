@@ -54,6 +54,8 @@ export const composeServiceSchema = z
       })
       .optional(),
     restart: z.string().optional(),
+    entrypoint: z.union([z.string(), z.array(z.string())]).optional(),
+    command: z.union([z.string(), z.array(z.string())]).optional(),
     profiles: z.array(z.string()).default([]),
     deploy: z
       .object({

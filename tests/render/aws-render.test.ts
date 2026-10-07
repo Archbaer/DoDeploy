@@ -67,6 +67,51 @@ describe("aws renderer", () => {
     expect(Object.keys(files).sort()).toContain("ec2.tf");
   });
 
+  it("renders command and entrypoint overrides per AWS target (issue #25)", () => {
+    const ir = projectIRSchema.parse({
+      meta: { name: "x" },
+      compute: [
+        {
+          name: "worker",
+          source: "compose",
+          kind: "worker",
+          image: "alpine:3",
+          target: "fargate",
+          entrypoint: ["/bin/sh"],
+          command: ["-c", "sleep infinity"],
+        },
+        {
+          name: "box",
+          source: "compose",
+          kind: "worker",
+          image: "alpine:3",
+          target: "ec2",
+          entrypoint: ["/bin/sh"],
+          command: ["-c", "sleep infinity"],
+        },
+        {
+          name: "web",
+          source: "compose",
+          kind: "web",
+          image: "nginx",
+          target: "apprunner",
+          command: ["nginx", "-g", "daemon off;"],
+          entrypoint: ["/custom-entry.sh"],
+        },
+      ],
+    });
+    const { files, diagnostics } = awsRulePack.render(enriched(ir));
+    expect(files["compute.tf"]).toContain('entryPoint = ["/bin/sh"]');
+    expect(files["compute.tf"]).toContain('command    = ["-c", "sleep infinity"]');
+    const run = files["ec2.tf"]?.split("\n").find((l) => l.includes("--name box")) ?? "";
+    expect(run).toContain("--entrypoint '/bin/sh'");
+    expect(run.endsWith("'-c' 'sleep infinity'")).toBe(true);
+    expect(files["apprunner.tf"]).toContain('start_command = "nginx -g daemon off;"');
+    expect(
+      diagnostics.some((d) => d.message.includes("entrypoint") && d.message.includes("App Runner")),
+    ).toBe(true);
+  });
+
   it("renders ECS for compute, RDS for postgres, ElastiCache for redis", () => {
     const { files } = awsRulePack.render(enriched());
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');

@@ -43,6 +43,8 @@ export const computeUnitSchema = z.object({
   memoryMb: z.number().int().positive().optional(),
   env: z.record(z.string(), z.string()).default({}),
   secrets: z.array(z.string()).default([]),
+  command: z.array(z.string()).optional(),
+  entrypoint: z.array(z.string()).optional(),
   healthcheck: healthcheckSchema.optional(),
   dependsOn: z.array(z.string()).default([]),
 });

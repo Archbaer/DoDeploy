@@ -32,6 +32,27 @@ describe("gcp renderer", () => {
     );
   });
 
+  it("renders entrypoint/command as command/args on containers (issue #25)", () => {
+    for (const pack of [gcpRulePack, azureRulePack]) {
+      const ir = projectIRSchema.parse({
+        meta: { name: "x" },
+        compute: [
+          {
+            name: "worker",
+            source: "compose",
+            kind: "worker",
+            image: "alpine:3",
+            entrypoint: ["/bin/sh"],
+            command: ["-c", "sleep infinity"],
+          },
+        ],
+      });
+      const { files } = pack.render(enriched(pack.rules, ir));
+      expect(files["compute.tf"]).toContain('command = ["/bin/sh"]');
+      expect(files["compute.tf"]).toContain('args    = ["-c", "sleep infinity"]');
+    }
+  });
+
   it("renders Cloud Run, Cloud SQL, Memorystore and GCS", () => {
     const { files } = gcpRulePack.render(enriched(gcpRulePack.rules));
     expect(files["compute.tf"]).toContain('resource "google_cloud_run_v2_service" "api"');

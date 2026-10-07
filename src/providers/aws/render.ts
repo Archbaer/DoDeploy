@@ -359,6 +359,14 @@ const taskDefSection = (ir: EnrichedIR): string => {
         .map(([key, value]) => `      { name = ${quote(key)}, value = ${quote(value)} },`)
         .join("\n");
       const environment = envVars.length > 0 ? `    environment = [\n${envVars}\n    ]` : "";
+      const commandEntry = [
+        u.entrypoint !== undefined
+          ? `      entryPoint = [${u.entrypoint.map(quote).join(", ")}]`
+          : "",
+        u.command !== undefined ? `      command    = [${u.command.map(quote).join(", ")}]` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
       const secretTodo = u.secrets
         .map(
           (key) =>
@@ -377,7 +385,7 @@ const taskDefSection = (ir: EnrichedIR): string => {
       name      = ${quote(label)}
       image     = ${unitImage(u)}
       essential = true
-${portMappings}
+${commandEntry ? `${commandEntry}\n` : ""}${portMappings}
 ${environment}
     }
   ])
@@ -460,7 +468,12 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
         .join(" ");
       const image = u.image ?? `\${var.${tfName(u.name)}_image}`;
       const name = u.name.replace(/[^a-zA-Z0-9_.-]/g, "-");
-      return `docker run -d --restart unless-stopped --name ${name} ${ports}${env ? ` ${env}` : ""} ${image}`;
+      // docker run CLI: --entrypoint takes the binary; remaining entrypoint args and the
+      // command follow the image, each shell-quoted, preserving the exec-form argv order.
+      const entrypoint =
+        u.entrypoint !== undefined ? ` --entrypoint ${esc(u.entrypoint[0] ?? "")}` : "";
+      const args = [...(u.entrypoint?.slice(1) ?? []), ...(u.command ?? [])].map(esc).join(" ");
+      return `docker run -d --restart unless-stopped --name ${name}${entrypoint} ${ports}${env ? ` ${env}` : ""} ${image}${args ? ` ${args}` : ""}`;
     })
     .join("\n");
   return `data "aws_ami" "al2023" {
@@ -526,7 +539,7 @@ ${
       image_identifier      = ${unitImage(u)}
       image_repository_type = ${quote(repoType)}
       image_configuration {
-        port = "${port}"${envVars ? `\n        runtime_environment_variables = { ${envVars} }` : ""}
+        port = "${port}"${envVars ? `\n        runtime_environment_variables = { ${envVars} }` : ""}${u.command !== undefined && u.command.length > 0 ? `\n        start_command = ${quote(u.command.join(" "))}` : ""}
       }
     }
   }
@@ -709,6 +722,15 @@ export function renderAws(ir: EnrichedIR): RenderResult {
       routeTodos.push(
         `# TODO(dodeploy): ${JSON.stringify(unit.name)}:${port.container}: ${reason}`,
       );
+    }
+  }
+  for (const unit of apprunnerUnits(ir)) {
+    if (unit.entrypoint !== undefined && unit.entrypoint.length > 0) {
+      diagnostics.push({
+        stage: "render",
+        severity: "warning",
+        message: `${quote(unit.name)}: entrypoint is not supported by App Runner and was dropped; bake it into the image or use command (rendered as start_command) instead`,
+      });
     }
   }
   for (const unit of ir.compute) {

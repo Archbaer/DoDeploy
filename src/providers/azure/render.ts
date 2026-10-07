@@ -106,6 +106,12 @@ const computeSection = (ir: EnrichedIR): string =>
         )
         .join("\n");
       const env = envVars.length > 0 ? `\n${envVars}` : "";
+      // Container Apps: entrypoint → command, command → args.
+      const commandArgs =
+        (u.entrypoint !== undefined
+          ? `\n        command = [${u.entrypoint.map(quote).join(", ")}]`
+          : "") +
+        (u.command !== undefined ? `\n        args    = [${u.command.map(quote).join(", ")}]` : "");
       const ingress =
         u.kind === "web" && publicPort !== undefined
           ? `
@@ -130,7 +136,7 @@ const computeSection = (ir: EnrichedIR): string =>
       name   = ${quote(label)}
       image  = ${image}
       cpu    = ${u.cpu ?? 0.5}
-      memory = "${u.memoryMb ?? 1024}Mi"${env}
+      memory = "${u.memoryMb ?? 1024}Mi"${commandArgs}${env}
     }
   }
 ${ingress}

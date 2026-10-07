@@ -138,6 +138,12 @@ const computeSection = (ir: EnrichedIR): string =>
         )
         .join("\n");
       const env = envVars.length > 0 ? `\n${envVars}` : "";
+      // Cloud Run containers: entrypoint → command, command → args.
+      const commandArgs =
+        (u.entrypoint !== undefined
+          ? `\n        command = [${u.entrypoint.map(quote).join(", ")}]`
+          : "") +
+        (u.command !== undefined ? `\n        args    = [${u.command.map(quote).join(", ")}]` : "");
       return `${secretTodos.length > 0 ? `${secretTodos}\n` : ""}resource "google_cloud_run_v2_service" "${label}" {
   name     = ${quote(label)}
   location = var.region
@@ -145,7 +151,7 @@ const computeSection = (ir: EnrichedIR): string =>
 
   template {
     containers {
-      image = ${image}${ports}${env}
+      image = ${image}${commandArgs}${ports}${env}
     }
 
     vpc_access {
