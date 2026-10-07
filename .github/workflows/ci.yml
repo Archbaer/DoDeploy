@@ -11,12 +11,16 @@ jobs:
   quality:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 22.12.0 = declared engines minimum; 24 = current LTS
+        node-version: ["22.12.0", "24"]
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install (locked)
@@ -24,6 +28,9 @@ jobs:
 
       - name: Enforce exact dependency versions
         run: node scripts/check-exact-versions.mjs
+
+      - name: Verify engines contract against dependencies
+        run: node scripts/check-engines.mjs
 
       - name: Lint & format
         run: npx biome ci .
