@@ -23,6 +23,29 @@ describe("normalizeCompose", () => {
     expect(result.value.network.loadBalancer).toBe("application");
   });
 
+  it("keeps loopback-published ports internal end to end (issue #24)", () => {
+    const file = composeFileSchema.parse({
+      services: {
+        web: {
+          image: "nginx",
+          ports: ["127.0.0.1:8080:80", { target: 81, published: 8081, host_ip: "[::1]" }],
+        },
+      },
+    });
+    const result = normalizeCompose(file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const unit = result.value.compute[0];
+    expect(unit?.ports).toHaveLength(2);
+    expect(unit?.ports.every((p) => !p.public)).toBe(true);
+    expect(unit?.kind).toBe("worker");
+    expect(result.value.network.publicIngress).toBe(false);
+    expect(result.value.network.loadBalancer).toBe("none");
+    expect(
+      result.diagnostics.filter((d) => d.message.includes("not publicly reachable")),
+    ).toHaveLength(2);
+  });
+
   it("detects datastore images and extracts engine and version", () => {
     const result = normalizeCompose(load("web-db-redis.yaml"));
     expect(result.ok).toBe(true);

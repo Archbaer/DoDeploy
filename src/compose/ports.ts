@@ -26,23 +26,37 @@ export function durationToSeconds(raw: string): number | undefined {
   return matched ? Math.round(total) : undefined;
 }
 
+/** Host IPs that mean "all interfaces" — anything else explicit is a restricted binding. */
+const isWildcardHostIp = (ip: string): boolean => ip === "0.0.0.0" || ip === "::" || ip === "[::]";
+
 export function toPort(
   spec: ComposePort,
   serviceName: string,
   diagnostics: DiagnosticLike[],
 ): Port | undefined {
+  const restrict = (hostIp: string): void => {
+    diagnostics.push({
+      stage: "normalize",
+      severity: "warning",
+      message: `service "${serviceName}": port bound to host IP "${hostIp}" is not publicly reachable; generated config keeps it internal`,
+    });
+  };
+
   if (typeof spec === "object" && "target" in spec) {
     const published = spec.published === undefined ? undefined : Number(spec.published);
     const validHost = published !== undefined && Number.isInteger(published);
+    const hostIp = spec.host_ip;
+    const restricted = hostIp !== undefined && !isWildcardHostIp(hostIp);
+    if (restricted && validHost) restrict(hostIp);
     return {
       container: spec.target,
       ...(validHost ? { host: published } : {}),
       protocol: spec.protocol === "udp" ? "udp" : "tcp",
-      public: validHost,
+      public: restricted ? false : validHost,
     };
   }
 
-  const raw = String(spec);
+  let raw = String(spec);
   if (raw.includes("-")) {
     diagnostics.push({
       stage: "normalize",
@@ -51,6 +65,12 @@ export function toPort(
     });
     return undefined;
   }
+
+  // Optional leading host IP: IPv4, [bracketed IPv6] or localhost (Compose short syntax).
+  const ipMatch = /^(\[[0-9a-fA-F:]+\]|\d{1,3}(?:\.\d{1,3}){3}|localhost):/.exec(raw);
+  const hostIp = ipMatch?.[1];
+  if (ipMatch) raw = raw.slice(ipMatch[0].length);
+  const restricted = hostIp !== undefined && !isWildcardHostIp(hostIp);
 
   const parts = raw.split(":").filter((p) => p !== "");
   const last = parts.at(-1) ?? "";
@@ -69,11 +89,12 @@ export function toPort(
   const hostRaw = parts.length > 1 ? parts.at(-2) : undefined;
   const host = hostRaw !== undefined ? Number(hostRaw) : undefined;
   const validHost = host !== undefined && Number.isInteger(host);
+  if (restricted && validHost) restrict(hostIp as string);
   return {
     container,
     ...(validHost ? { host } : {}),
     protocol: protoRaw === "udp" ? "udp" : "tcp",
-    public: validHost,
+    public: restricted ? false : validHost,
   };
 }
 
