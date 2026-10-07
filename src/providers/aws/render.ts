@@ -1,6 +1,6 @@
 import type { ComputeUnit, EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { quote, tfName } from "../../render/hcl.js";
+import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 import { resolveDatabaseVersion } from "../database-version.js";
 
@@ -702,6 +702,10 @@ const outputsTf = (ir: EnrichedIR): string => {
 
 export function renderAws(ir: EnrichedIR): RenderResult {
   const diagnostics: RenderResult["diagnostics"] = [];
+  const dupError = duplicateLabelError(ir.compute.map((u) => u.name));
+  if (dupError !== undefined) {
+    diagnostics.push({ stage: "render", severity: "error", message: dupError });
+  }
 
   for (const datastore of ir.datastores) {
     if (datastore.engine === "postgres" || datastore.engine === "mysql") {
@@ -783,15 +787,18 @@ export function renderAws(ir: EnrichedIR): RenderResult {
     ],
     ir,
   );
-  const compute = renderSections(
-    [
-      { name: "ecs-cluster", builder: ecsClusterSection },
-      { name: "task-definitions", builder: taskDefSection },
-      { name: "ecs-services", builder: ecsServiceSection },
-      { name: "stateful", builder: statefulSection },
-    ],
-    ir,
-  );
+  const compute =
+    dupError !== undefined
+      ? { content: "", diagnostics: [] }
+      : renderSections(
+          [
+            { name: "ecs-cluster", builder: ecsClusterSection },
+            { name: "task-definitions", builder: taskDefSection },
+            { name: "ecs-services", builder: ecsServiceSection },
+            { name: "stateful", builder: statefulSection },
+          ],
+          ir,
+        );
   const data = renderSections(
     [
       { name: "datastore-network", builder: datastoreNetworkSection },
@@ -810,7 +817,7 @@ export function renderAws(ir: EnrichedIR): RenderResult {
     "providers.tf": providersTf(),
     "variables.tf": variablesTf(ir),
     "network.tf": `${HEADER}${routeTodos.join("\n")}\n${network.content}`,
-    "compute.tf": `${HEADER}${compute.content}`,
+    "compute.tf": `${HEADER}${dupError !== undefined ? `# TODO(dodeploy): ${dupError}\n` : compute.content}`,
     "data.tf": `${HEADER}${data.content}`,
     "outputs.tf": outputsTf(ir),
   };

@@ -1,6 +1,6 @@
 import type { EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { quote, tfName } from "../../render/hcl.js";
+import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 
 import { resolveDatabaseVersion } from "../database-version.js";
@@ -277,14 +277,22 @@ export function renderGcp(ir: EnrichedIR): RenderResult {
     }
   }
 
+  const dupError = duplicateLabelError(ir.compute.map((u) => u.name));
+  if (dupError !== undefined) {
+    diagnostics.push({ stage: "render", severity: "error", message: dupError });
+  }
+
   const network = renderSections([{ name: "network", builder: networkSection }], ir);
-  const compute = renderSections(
-    [
-      { name: "cloud-run", builder: computeSection },
-      { name: "stateful", builder: statefulSection },
-    ],
-    ir,
-  );
+  const compute =
+    dupError !== undefined
+      ? { content: "", diagnostics: [] }
+      : renderSections(
+          [
+            { name: "cloud-run", builder: computeSection },
+            { name: "stateful", builder: statefulSection },
+          ],
+          ir,
+        );
   const data = renderSections(
     [
       ...ir.datastores.map((d) => ({
@@ -302,7 +310,7 @@ export function renderGcp(ir: EnrichedIR): RenderResult {
       "providers.tf": providersTf(),
       "variables.tf": variablesTf(ir),
       "network.tf": `${HEADER}${network.content}`,
-      "compute.tf": `${HEADER}${compute.content}`,
+      "compute.tf": `${HEADER}${dupError !== undefined ? `# TODO(dodeploy): ${dupError}\n` : compute.content}`,
       "data.tf": `${HEADER}${data.content}`,
       "outputs.tf": outputsTf(ir),
     },

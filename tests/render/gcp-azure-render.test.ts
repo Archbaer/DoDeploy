@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { projectIRSchema } from "../../src/ir/index.js";
+import { enrichedIRSchema, projectIRSchema } from "../../src/ir/index.js";
+import { awsRulePack } from "../../src/providers/aws/index.js";
 import { azureRulePack } from "../../src/providers/azure/index.js";
 import { gcpRulePack } from "../../src/providers/gcp/index.js";
 import { applyRules } from "../../src/rules/index.js";
@@ -121,5 +122,27 @@ describe("azure renderer", () => {
     expect(diagnostics.some((d) => d.message.includes('volume "shared"'))).toBe(true);
     expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
     expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
+  });
+
+  describe("duplicate Terraform labels (issue #33)", () => {
+    const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+    it.each(Object.entries(packs))(
+      "%s rejects colliding labels with an error diagnostic instead of invalid output",
+      (_n, pack) => {
+        const ir = enrichedIRSchema.parse({
+          meta: { name: "probe" },
+          compute: [
+            { name: "api_web", source: "compose", kind: "web", image: "nginx" },
+            { name: "api-web", source: "compose", kind: "web", image: "nginx" },
+          ],
+        });
+        const { files, diagnostics } = pack.render(ir);
+        expect(
+          diagnostics.some((d) => d.severity === "error" && d.message.includes("api-web")),
+        ).toBe(true);
+        expect(files["compute.tf"]).toContain("TODO(dodeploy)");
+        expect(files["compute.tf"]).not.toContain('resource "');
+      },
+    );
   });
 });

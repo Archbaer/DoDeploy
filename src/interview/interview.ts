@@ -129,10 +129,20 @@ export async function runInterview(
     const names = await driver.text("Service names (comma separated)?");
     const kind =
       workload === "vms" ? "stateful" : await driver.select("Service type?", KIND_OPTIONS);
+    const seenNames = new Set(compute.map((u) => u.name));
     for (const name of names
       .split(",")
       .map((n) => n.trim())
       .filter((n) => n.length > 0)) {
+      if (seenNames.has(name)) {
+        diagnostics.push({
+          stage: "interview",
+          severity: "warning",
+          message: `duplicate service name "${name}" skipped — service names must be unique`,
+        });
+        continue;
+      }
+      seenNames.add(name);
       compute.push({
         name,
         source: "interview",
