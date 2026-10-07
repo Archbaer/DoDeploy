@@ -456,11 +456,11 @@ const ec2BoxSection = (ir: EnrichedIR): string => {
     .map((u) => {
       const ports = u.ports.map((p) => `-p ${p.host ?? p.container}:${p.container}`).join(" ");
       const env = Object.entries(u.env)
-        .map(([k, v]) => `-e ${k}=${esc(v)}`)
+        .map(([k, v]) => `-e ${esc(`${k}=${v}`)}`)
         .join(" ");
       const image = u.image ?? `\${var.${tfName(u.name)}_image}`;
       const name = u.name.replace(/[^a-zA-Z0-9_.-]/g, "-");
-      return `docker run -d --restart unless-stopped --name ${name} ${ports}${env ? ` ${env}` : ""} ${image}`;
+      return `docker run -d --restart unless-stopped --name ${name} ${ports}${env ? ` ${env}` : ""} ${esc(image)}`;
     })
     .join("\n");
   return `data "aws_ami" "al2023" {
