@@ -13,10 +13,18 @@ export const composePortSchema = z.union([
 ]);
 
 export const composeEnvironmentSchema = z
-  .union([z.record(z.string(), z.union([z.string(), z.null()])), z.array(z.string())])
+  .union([
+    z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+    z.array(z.string()),
+  ])
   .transform((env) => {
     if (!Array.isArray(env)) {
-      return Object.fromEntries(Object.entries(env).map(([key, value]) => [key, value ?? ""]));
+      return Object.fromEntries(
+        Object.entries(env).map(([key, value]) => [
+          key,
+          value === null ? "" : typeof value === "string" ? value : String(value),
+        ]),
+      );
     }
     return Object.fromEntries(
       env.map((entry) => {
@@ -29,7 +37,18 @@ export const composeEnvironmentSchema = z
 export const composeServiceSchema = z
   .object({
     image: z.string().min(1).optional(),
-    build: z.union([z.string(), z.object({ context: z.string().optional() }).strict()]).optional(),
+    build: z
+      .union([
+        z.string(),
+        // Standard build options are accepted; unrecognized keys are stripped, not rejected.
+        z.object({
+          context: z.string().optional(),
+          dockerfile: z.string().optional(),
+          target: z.string().optional(),
+          args: z.record(z.string(), z.union([z.string(), z.number(), z.null()])).optional(),
+        }),
+      ])
+      .optional(),
     ports: z.array(composePortSchema).default([]),
     environment: composeEnvironmentSchema.default({}),
     volumes: z
@@ -45,13 +64,14 @@ export const composeServiceSchema = z
       )
       .default([]),
     depends_on: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]).default([]),
-    networks: z.array(z.string()).default([]),
+    networks: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]).default([]),
     healthcheck: z
       .object({
-        test: z.union([z.string(), z.array(z.string()).min(1)]),
+        test: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
         interval: z.string().optional(),
         timeout: z.string().optional(),
         retries: z.number().int().min(1).optional(),
+        disable: z.boolean().optional(),
       })
       .optional(),
     restart: z.string().optional(),
@@ -77,6 +97,8 @@ export const composeServiceSchema = z
   .transform((s) => ({
     ...s,
     dependsOn: Array.isArray(s.depends_on) ? s.depends_on : Object.keys(s.depends_on),
+    // Map form (aliases etc.) keeps only the network names; attachment details are deferred.
+    networks: Array.isArray(s.networks) ? s.networks : Object.keys(s.networks),
   }));
 
 export const composeFileSchema = z.object({

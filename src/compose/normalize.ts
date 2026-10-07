@@ -79,7 +79,7 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
         ? durationToSeconds(service.healthcheck.timeout)
         : undefined;
     const healthcheck =
-      service.healthcheck === undefined
+      service.healthcheck === undefined || service.healthcheck.disable === true
         ? undefined
         : {
             command: Array.isArray(test) ? test : [test ?? ""],
