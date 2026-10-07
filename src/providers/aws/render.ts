@@ -66,7 +66,7 @@ const variablesTf = (ir: EnrichedIR): string => {
     .map(
       (u) => `variable "${tfName(u.name)}_image" {
   type        = string
-  description = "Full image URI for ${u.name} (build from ${u.buildContext ?? "context"} and push to ECR)"
+  description = ${quote(`Full image URI for ${u.name} (build from ${u.buildContext ?? "context"} and push to ECR)`)}
 }
 `,
     )

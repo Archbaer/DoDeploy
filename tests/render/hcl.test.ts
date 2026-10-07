@@ -16,6 +16,23 @@ describe("quote", () => {
   it("escapes quotes and keeps valid HCL strings", () => {
     expect(quote('say "hi"')).toBe('"say \\"hi\\""');
   });
+
+  it("escapes HCL template markers so values stay literal", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal HCL marker
+    expect(quote("${var.db_password}")).toBe('"$${var.db_password}"');
+    expect(quote("%{ if true }changed%{ endif }")).toBe('"%%{ if true }changed%%{ endif }"');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal Compose-style marker
+    expect(quote("${APP_MODE:-production}")).toBe('"$${APP_MODE:-production}"');
+  });
+
+  it("escapes newlines, carriage returns and tabs", () => {
+    expect(quote("first\nsecond\r\nthird\tend")).toBe('"first\\nsecond\\r\\nthird\\tend"');
+  });
+
+  it("escapes backslashes before any other sequence", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal HCL marker
+    expect(quote("a\\b${c}")).toBe('"a\\\\b$${c}"');
+  });
 });
 
 describe("block", () => {
