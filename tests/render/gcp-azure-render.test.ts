@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { projectIRSchema } from "../../src/ir/index.js";
+import { enrichedIRSchema, projectIRSchema } from "../../src/ir/index.js";
+import { awsRulePack } from "../../src/providers/aws/index.js";
 import { azureRulePack } from "../../src/providers/azure/index.js";
 import { gcpRulePack } from "../../src/providers/gcp/index.js";
 import { applyRules } from "../../src/rules/index.js";
@@ -100,5 +101,52 @@ describe("azure renderer", () => {
     expect(diagnostics.some((d) => d.message.includes('volume "shared"'))).toBe(true);
     expect(files["data.tf"]).toContain('resource "azurerm_storage_container" "assets"');
     expect(files["data.tf"]).toContain('resource "azurerm_storage_account" "main"');
+  });
+});
+
+describe("HCL literal preservation (issue #32)", () => {
+  const packs = { aws: awsRulePack, gcp: gcpRulePack, azure: azureRulePack };
+  const irWithEnv = enrichedIRSchema.parse({
+    meta: { name: "probe" },
+    compute: [
+      {
+        name: "api",
+        source: "compose",
+        kind: "web",
+        image: "nginx",
+        env: {
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal HCL marker
+          TEMPLATE: "${var.db_password}",
+          DIRECTIVE: "%{ if true }changed%{ endif }",
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal Compose-style marker
+          COMPOSE_STYLE: "${APP_MODE:-production}",
+          TEXT: "first\nsecond",
+        },
+      },
+    ],
+  });
+
+  it.each(Object.entries(packs))("%s keeps template markers and newlines literal", (_n, pack) => {
+    const all = Object.values(pack.render(irWithEnv).files).join("\n");
+    expect(all).toContain("$${var.db_password}");
+    expect(all).toContain("%%{ if true }changed%%{ endif }");
+    expect(all).toContain("$${APP_MODE:-production}");
+    expect(all).toContain("first\\nsecond");
+    expect(all).not.toMatch(/(?<!\$)\$\{var\.db_password\}/);
+    expect(all).not.toMatch(/(?<!%)%\{ if true \}/);
+  });
+
+  it("escapes build-image variable descriptions", () => {
+    const ir = enrichedIRSchema.parse({
+      meta: { name: "probe" },
+      compute: [
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional literal HCL markers
+        { name: 'api"${var.x}', source: "compose", kind: "web", buildContext: "./app${var.y}" },
+      ],
+    });
+    const variables = awsRulePack.render(ir).files["variables.tf"] ?? "";
+    expect(variables).toContain("$${var.y}");
+    expect(variables).not.toMatch(/(?<!\$)\$\{var\.y\}/);
+    expect(variables).not.toMatch(/(?<!\$)\$\{var\.x\}/);
   });
 });
