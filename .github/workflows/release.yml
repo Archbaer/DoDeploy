@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: Install Terraform (for HCL validation tests)
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.9.8
 
