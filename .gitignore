@@ -1,4 +1,3 @@
-# Agents
 .opencode
 opencode.json
 
@@ -12,5 +11,5 @@ dodeploy-infra/
 .docs
 docs/superpowers/
 
-# Local agent instructions — not versioned
-AGENTS.md
+*.md
+!README.md
