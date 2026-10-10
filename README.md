@@ -194,6 +194,7 @@ npm run lint           # biome check
 npm run format         # biome format --write
 npm run typecheck      # tsc --noEmit (strict)
 npm run ci             # versions → lint → typecheck → coverage → build
+node scripts/eval-ai-cli.mjs # AI CLI smoke evaluation across all providers
 ```
 
 Pre-commit hooks (lefthook) run biome + typecheck automatically.

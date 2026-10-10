@@ -1,3 +1,4 @@
+import { deriveNetwork } from "../ir/network.js";
 import type { ComputeUnit, Diagnostic, ProjectIR } from "../ir/schema.js";
 import { projectIRSchema } from "../ir/schema.js";
 import {
@@ -13,13 +14,6 @@ import type { ComposeFile } from "./schema.js";
 export type NormalizeResult =
   | { ok: true; value: ProjectIR; diagnostics: Diagnostic[] }
   | { ok: false; diagnostics: Diagnostic[] };
-
-const ENGINE_PORTS: Record<string, number> = {
-  postgres: 5432,
-  mysql: 3306,
-  redis: 6379,
-  mongodb: 27017,
-};
 
 const SECRET_KEY = /(PASS|SECRET|TOKEN|KEY|URL|CRED)/i;
 
@@ -164,31 +158,12 @@ export function normalizeCompose(compose: ComposeFile): NormalizeResult {
       sharedBy: users,
     }));
 
-  const publicIngress = compute.some((unit) => unit.ports.some((p) => p.public));
-  const securityGroupRules: ProjectIR["network"]["securityGroupRules"] = [];
-  for (const unit of compute) {
-    for (const dep of unit.dependsOn) {
-      const datastore = datastores.find((d) => d.name === dep);
-      const port = datastore
-        ? ENGINE_PORTS[datastore.engine]
-        : compute.find((c) => c.name === dep)?.ports[0]?.container;
-      if (port !== undefined) {
-        securityGroupRules.push({ from: unit.name, to: dep, port });
-      }
-    }
-  }
-
   const ir = projectIRSchema.safeParse({
     meta: { name: compose.name ?? "app", source: "compose" },
     compute,
     datastores,
     storage,
-    network: {
-      publicIngress,
-      loadBalancer: publicIngress ? "application" : "none",
-      serviceDiscovery: compute.some((u) => u.dependsOn.length > 0) || storage.length > 0,
-      securityGroupRules,
-    },
+    network: deriveNetwork(compute, datastores, storage),
   });
 
   if (!ir.success) {

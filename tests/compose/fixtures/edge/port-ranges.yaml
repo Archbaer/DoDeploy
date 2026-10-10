@@ -1,0 +1,2 @@
+services:
+  app: { image: nginx:1.27, ports: ["8080-8082:80-82"] }

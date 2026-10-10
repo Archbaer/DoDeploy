@@ -1,0 +1,5 @@
+name: escaped
+services:
+  app:
+    image: busybox:1.36
+    environment: { MESSAGE: "quote ' slash \\ newline", LOG_LEVEL: info }

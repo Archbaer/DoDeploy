@@ -1,0 +1,5 @@
+name: profiles
+x-default: &defaults { image: nginx:1.27 }
+services:
+  web: { <<: *defaults, ports: ["8080:80"] }
+  debug: { <<: *defaults, profiles: [debug] }

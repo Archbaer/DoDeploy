@@ -1,0 +1,10 @@
+name: l2-api
+services:
+  api:
+    image: ghcr.io/example/api:1.0.0
+    ports: ["8080:8080"]
+    environment: { DATABASE_URL: "postgres://db:5432/app", LOG_LEVEL: info }
+    depends_on: [db]
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_PASSWORD: TEST_ONLY_PASSWORD_SENTINEL }

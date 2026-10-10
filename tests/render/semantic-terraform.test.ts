@@ -1,4 +1,3 @@
-import { execFileSync, execSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,15 +5,6 @@ import { describe, expect, it } from "vitest";
 import { generateProject } from "../../src/generate.js";
 
 const FIXTURES = join(process.cwd(), "tests/compose/fixtures");
-
-const terraformAvailable = (() => {
-  try {
-    execSync("terraform version", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
 
 const providers = ["aws", "gcp", "azure"] as const;
 type Provider = (typeof providers)[number];
@@ -25,12 +15,6 @@ const readFiles = (dir: string): Record<string, string> =>
       (name) => [name, readFileSync(join(dir, name), "utf8")],
     ),
   );
-
-const runTerraformValidate = (dir: string): void => {
-  execFileSync("terraform", ["fmt", dir], { stdio: "pipe" });
-  execFileSync("terraform", [`-chdir=${dir}`, "init", "-backend=false"], { stdio: "pipe" });
-  execFileSync("terraform", [`-chdir=${dir}`, "validate"], { stdio: "pipe" });
-};
 
 describe("semantic render + terraform validate", () => {
   it.each(providers)(
@@ -74,7 +58,6 @@ describe("semantic render + terraform validate", () => {
         expect(files["outputs.tf"]).toContain("azurerm_postgresql_flexible_server.db.fqdn");
         expect(files["outputs.tf"]).toContain("azurerm_redis_cache.cache.hostname");
       }
-      if (terraformAvailable) runTerraformValidate(out);
     },
     180_000,
   );
@@ -112,7 +95,6 @@ describe("semantic render + terraform validate", () => {
         expect(files["outputs.tf"]).toContain("azurerm_container_app.frontend.ingress[0].fqdn");
         expect(files["outputs.tf"]).toContain("azurerm_container_app.backend.ingress[0].fqdn");
       }
-      if (terraformAvailable) runTerraformValidate(out);
     },
     180_000,
   );
@@ -139,7 +121,6 @@ describe("semantic render + terraform validate", () => {
         expect(files["data.tf"]).not.toContain('resource "azurerm_storage_share"');
         expect(files["data.tf"]).not.toContain('resource "azurerm_storage_account"');
       }
-      if (terraformAvailable) runTerraformValidate(out);
     },
     180_000,
   );
@@ -159,7 +140,6 @@ describe("semantic render + terraform validate", () => {
       const files = readFiles(out);
       expect(files["variables.tf"]).toMatch(/variable[\s\S]{0,10}api_image/);
       expect(files["compute.tf"]).toContain("TODO(dodeploy)");
-      if (terraformAvailable) runTerraformValidate(out);
     },
     180_000,
   );

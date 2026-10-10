@@ -1,0 +1,3 @@
+services:
+  first: { image: nginx:1.27, ports: ["8080:80"] }
+  second: { image: nginx:1.27, ports: ["8080:80"] }

@@ -37,10 +37,10 @@ describe("AWS runtime wiring", () => {
     const { files } = render([api, web("ui", 8081)]);
     const network = files["network.tf"] ?? "";
     expect(network.match(/resource "aws_lb_listener"/g)).toHaveLength(3);
-    expect(network).toContain("security_groups   = [aws_security_group.alb.id]");
+    expect(network).toContain("security_groups    = [aws_security_group.alb.id]");
     expect(network).toContain("source_security_group_id = aws_security_group.alb.id");
     expect(files["compute.tf"]).toContain(
-      "depends_on = [aws_iam_role_policy_attachment.ecs_execution, aws_route_table_association.private_a",
+      "depends_on      = [aws_iam_role_policy_attachment.ecs_execution, aws_route_table_association.private_a",
     );
     expect(files["compute.tf"]).toContain("aws_lb_listener.api_9090");
     expect(files["compute.tf"]?.match(/load_balancer \{/g)).toHaveLength(3);
@@ -84,16 +84,18 @@ describe("AWS runtime wiring", () => {
     const result = applyRules(dbIR, awsRulePack.rules);
     if (!result.ok) throw new Error("rules failed");
     const { files } = awsRulePack.render(result.value);
-    expect(files["data.tf"]).toContain("db_subnet_group_name = aws_db_subnet_group.main.name");
+    expect(files["data.tf"]).toContain("db_subnet_group_name   = aws_db_subnet_group.main.name");
     expect(files["data.tf"]).toContain(
       "vpc_security_group_ids = [aws_security_group.service_db.id]",
     );
     expect(files["data.tf"]).toContain(
-      "subnet_group_name = aws_elasticache_subnet_group.main.name",
+      "subnet_group_name  = aws_elasticache_subnet_group.main.name",
     );
     expect(files["network.tf"]).toContain('resource "aws_service_discovery_private_dns_namespace"');
     expect(files["network.tf"]).toContain('type = "A"');
-    expect(files["compute.tf"]).toContain("execution_role_arn = aws_iam_role.ecs_execution.arn");
+    expect(files["compute.tf"]).toContain(
+      "execution_role_arn       = aws_iam_role.ecs_execution.arn",
+    );
     expect(files["compute.tf"]).toContain("AmazonECSTaskExecutionRolePolicy");
   });
 

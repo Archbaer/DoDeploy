@@ -1,0 +1,3 @@
+name: profiles-only
+services:
+  debug: { image: nginx:1.27, profiles: [debug] }

@@ -6,3 +6,5 @@ export interface CloudProvider {
   rules: Rule[];
   render: Renderer;
 }
+
+export type ProviderId = CloudProvider["id"];

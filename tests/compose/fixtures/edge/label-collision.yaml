@@ -1,0 +1,3 @@
+services:
+  foo-bar: { image: nginx:1.27 }
+  foo_bar: { image: nginx:1.27 }

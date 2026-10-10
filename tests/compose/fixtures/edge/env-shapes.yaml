@@ -1,0 +1,5 @@
+name: env
+services:
+  app:
+    image: nginx:1.27
+    environment: ["A=one=two", "EMPTY=", "BARE"]

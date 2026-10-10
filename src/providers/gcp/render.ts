@@ -1,6 +1,6 @@
 import type { EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
+import { alignFiles, duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 
 import { resolveDatabaseVersion } from "../database-version.js";
@@ -125,19 +125,20 @@ const computeSection = (ir: EnrichedIR): string =>
         u.image !== undefined
           ? quote(u.image)
           : `var.${label}_image # TODO(dodeploy): build & push this image (see Artifact Registry recommendation)`;
+      const indent = u.kind === "worker" || u.kind === "cron" ? "        " : "      ";
       const ports =
         publicPort !== undefined
           ? `
-    ports {
-      container_port = ${publicPort.container}
-    }`
+${indent}ports {
+${indent}  container_port = ${publicPort.container}
+${indent}}`
           : "";
       const ingress = u.kind === "web" ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL_ONLY";
       const envVars = Object.entries(u.env)
         .filter(([key]) => !u.secrets.includes(key))
         .map(
           ([key, value]) =>
-            `    env {\n      name  = ${quote(key)}\n      value = ${quote(value)}\n    }`,
+            `${indent}env {\n${indent}  name  = ${quote(key)}\n${indent}  value = ${quote(value)}\n${indent}}`,
         )
         .join("\n");
       const secretTodos = [...new Set(u.secrets)]
@@ -150,9 +151,9 @@ const computeSection = (ir: EnrichedIR): string =>
       // Cloud Run containers: entrypoint → command, command → args.
       const commandArgs =
         (u.entrypoint !== undefined
-          ? `\n        command = [${u.entrypoint.map(quote).join(", ")}]`
+          ? `\n${indent}command = [${u.entrypoint.map(quote).join(", ")}]`
           : "") +
-        (u.command !== undefined ? `\n        args    = [${u.command.map(quote).join(", ")}]` : "");
+        (u.command !== undefined ? `\n${indent}args = [${u.command.map(quote).join(", ")}]` : "");
       // Background workloads without HTTP ingress map to Cloud Run jobs, matching the
       // worker rule — services require an ingress listener and startup readiness.
       if (u.kind === "worker" || u.kind === "cron") {
@@ -354,14 +355,14 @@ export function renderGcp(ir: EnrichedIR): RenderResult {
   diagnostics.push(...network.diagnostics, ...compute.diagnostics, ...data.diagnostics);
 
   return {
-    files: {
+    files: alignFiles({
       "providers.tf": providersTf(),
       "variables.tf": variablesTf(ir),
       "network.tf": `${HEADER}${network.content}`,
       "compute.tf": `${HEADER}${dupError !== undefined ? `# TODO(dodeploy): ${dupError}\n` : compute.content}`,
       "data.tf": `${HEADER}${data.content}`,
       "outputs.tf": outputsTf(ir),
-    },
+    }),
     diagnostics,
   };
 }

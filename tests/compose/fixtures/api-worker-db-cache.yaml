@@ -1,0 +1,15 @@
+name: app-stack
+services:
+  api:
+    image: ghcr.io/example/app:2.0
+    ports: ["8080:8080"]
+    depends_on: [db, cache]
+    volumes: [uploads:/app/uploads]
+  worker:
+    image: ghcr.io/example/app:2.0
+    command: ["node", "worker.js"]
+    depends_on: [db, cache]
+    volumes: [uploads:/app/uploads]
+  db: { image: postgres:16 }
+  cache: { image: redis:7 }
+volumes: { uploads: {} }

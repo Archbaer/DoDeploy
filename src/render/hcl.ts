@@ -48,3 +48,50 @@ export function block(type: string, labels: string[], attrs: Record<string, stri
     .join("\n");
   return `${header} {\n${body}\n}\n`;
 }
+
+/**
+ * Align adjacent single-line attributes emitted by our templates. Multiline
+ * expressions start their own group; heredoc contents are kept byte-for-byte.
+ * This is deliberately limited to generated templates, not an HCL parser.
+ */
+export function alignAttributes(source: string): string {
+  const lines = source.split("\n");
+  let group: { index: number; indent: string; key: string; value: string }[] = [];
+  let heredoc: string | undefined;
+  const flush = () => {
+    const width = Math.max(0, ...group.map(({ key }) => key.length));
+    for (const { index, indent, key, value } of group) {
+      lines[index] = `${indent}${key.padEnd(width)} = ${value}`;
+    }
+    group = [];
+  };
+  for (const [index, line] of lines.entries()) {
+    if (heredoc !== undefined) {
+      if (line.trim() === heredoc) heredoc = undefined;
+      continue;
+    }
+    const match = /^( *)([\w-]+)\s*=\s*(.*)$/.exec(line);
+    if (!match) {
+      flush();
+      continue;
+    }
+    const [, indent = "", key = "", value = ""] = match;
+    const delimiter = /^<<-?(\w+)$/.exec(value)?.[1];
+    if (/[\[{]$/.test(value)) {
+      flush();
+      lines[index] = `${indent}${key} = ${value}`;
+      continue;
+    }
+    if (group[0]?.indent !== indent) flush();
+    group.push({ index, indent, key, value });
+    heredoc = delimiter;
+  }
+  flush();
+  return lines.join("\n");
+}
+
+export function alignFiles(files: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(files).map(([name, source]) => [name, alignAttributes(source)]),
+  );
+}

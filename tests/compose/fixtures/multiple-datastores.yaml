@@ -1,0 +1,6 @@
+name: data-stack
+services:
+  api: { image: ghcr.io/example/api:1.0, ports: ["8080:8080"], depends_on: [pg, mysql, cache] }
+  pg: { image: postgres:16 }
+  mysql: { image: mysql:8.0 }
+  cache: { image: redis:7 }

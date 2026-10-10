@@ -1,0 +1,5 @@
+name: ports
+services:
+  app:
+    image: nginx:1.27
+    ports: ["8080:80", "127.0.0.1:9090:90", "80"]

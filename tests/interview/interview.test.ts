@@ -9,74 +9,172 @@ import type { Budget, EnrichedIR } from "../../src/ir/index.js";
 import { projectIRSchema } from "../../src/ir/index.js";
 
 describe("runInterview", () => {
-  it("builds a full IR from an empty interview-source project", async () => {
-    const driver = new ScriptedDriver([
-      "gcp",
-      "balanced",
-      "europe-west1",
-      "containers",
-      "api, worker",
-      "worker",
-      true,
-      "postgres",
-      false,
-    ]);
-    const ir = projectIRSchema.parse({ meta: { name: "greenfield", source: "interview" } });
-    const result = await runInterview(ir, driver);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.meta.provider).toBe("gcp");
-    expect(result.value.meta.region).toBe("europe-west1");
-    expect(result.value.meta.source).toBe("interview");
-    expect(result.value.compute).toEqual([
-      expect.objectContaining({ name: "api", kind: "worker", source: "interview" }),
-      expect.objectContaining({ name: "worker", kind: "worker", source: "interview" }),
-    ]);
-    expect(result.value.datastores).toEqual([
-      expect.objectContaining({ engine: "postgres", detected: false }),
-    ]);
-    expect(result.value.storage).toEqual([]);
-  });
-
-  it("rejects duplicate service names with a warning (issue #33)", async () => {
-    const driver = new ScriptedDriver([
-      "gcp",
-      "balanced",
-      "europe-west1",
-      "containers",
-      "api, api, worker",
-      "worker",
-      false,
-      false,
-    ]);
-    const ir = projectIRSchema.parse({ meta: { name: "greenfield", source: "interview" } });
-    const result = await runInterview(ir, driver);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.compute.map((u) => u.name)).toEqual(["api", "worker"]);
-    expect(result.diagnostics.some((d) => d.message.includes('duplicate service name "api"'))).toBe(
-      true,
-    );
-  });
-
-  it("marks VM workloads as stateful", async () => {
+  it("collects different service roles, image/port intent, repeated datastores and dependencies", async () => {
     const driver = new ScriptedDriver([
       "aws",
       "balanced",
       "us-east-1",
-      "vms",
-      "legacy",
       true,
-      "mysql",
+      "api",
+      "web",
+      "pushed",
+      "ghcr.io/acme/api:1",
+      true,
+      "8080",
+      "fargate",
       false,
+      true,
+      "worker",
+      "worker",
+      "pushed",
+      "ghcr.io/acme/worker:1",
+      "fargate",
+      false,
+      false,
+      true,
+      "postgres",
+      "db",
+      "16",
+      true,
+      true,
+      "redis",
+      "cache",
+      "7",
+      true,
+      false,
+      "db, cache",
+      "db, cache",
+      true,
+      false,
+      true,
     ]);
-    const ir = projectIRSchema.parse({ meta: { name: "lift", source: "interview" } });
-    const result = await runInterview(ir, driver);
+    const result = await runInterview(
+      projectIRSchema.parse({ meta: { name: "parity", source: "interview" } }),
+      driver,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.compute[0]).toEqual(
-      expect.objectContaining({ name: "legacy", kind: "stateful" }),
+    expect(result.value.compute).toEqual([
+      expect.objectContaining({
+        name: "api",
+        kind: "web",
+        image: "ghcr.io/acme/api:1",
+        target: "fargate",
+        dependsOn: ["db", "cache"],
+        ports: [expect.objectContaining({ container: 8080, public: true })],
+      }),
+      expect.objectContaining({
+        name: "worker",
+        kind: "worker",
+        image: "ghcr.io/acme/worker:1",
+        target: "fargate",
+        dependsOn: ["db", "cache"],
+        ports: [],
+      }),
+    ]);
+    expect(
+      result.value.datastores.map(({ name, engine, version }) => ({ name, engine, version })),
+    ).toEqual([
+      { name: "db", engine: "postgres", version: "16" },
+      { name: "cache", engine: "redis", version: "7" },
+    ]);
+    expect(result.value.network.securityGroupRules).toEqual([
+      { from: "api", to: "db", port: 5432 },
+      { from: "api", to: "cache", port: 6379 },
+      { from: "worker", to: "db", port: 5432 },
+      { from: "worker", to: "cache", port: 6379 },
+    ]);
+    expect(driver.exhausted()).toBe(true);
+  });
+
+  it("covers build images, internal ports, external + managed datastores, dependencies and object storage", async () => {
+    const driver = new ScriptedDriver([
+      "aws",
+      "balanced",
+      "us-east-1",
+      true,
+      "api",
+      "worker",
+      "build",
+      "./api",
+      "fargate",
+      false,
+      false,
+      true,
+      "postgres",
+      "external-db",
+      "",
+      false,
+      true,
+      "redis",
+      "cache",
+      "7",
+      true,
+      false,
+      "external-db, cache",
+      true,
+      "both",
+      true,
+    ]);
+    const result = await runInterview(
+      projectIRSchema.parse({ meta: { name: "store", source: "interview" } }),
+      driver,
     );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.compute[0]).toMatchObject({
+      kind: "worker",
+      buildContext: "./api",
+      dependsOn: ["external-db", "cache"],
+    });
+    expect(result.value.datastores).toEqual([
+      expect.objectContaining({ name: "cache", engine: "redis", version: "7" }),
+    ]);
+    expect(result.value.storage.map((item) => item.kind)).toEqual(["static-assets", "uploads"]);
+    expect(
+      result.diagnostics.some((item) =>
+        item.message.includes('datastore "external-db" is external'),
+      ),
+    ).toBe(true);
+    expect(result.diagnostics.some((item) => item.message.includes("image build/push"))).toBe(true);
+    expect(result.value.network.securityGroupRules).toContainEqual({
+      from: "api",
+      to: "cache",
+      port: 6379,
+    });
+    expect(driver.exhausted()).toBe(true);
+  });
+
+  it("keeps named persistent volume as explicit deferred work", async () => {
+    const driver = new ScriptedDriver([
+      "aws",
+      "balanced",
+      "us-east-1",
+      true,
+      "api",
+      "worker",
+      "unknown",
+      "fargate",
+      true,
+      "uploads",
+      false,
+      false,
+      "",
+      true,
+      true,
+    ]);
+    const result = await runInterview(
+      projectIRSchema.parse({ meta: { name: "volume", source: "interview" } }),
+      driver,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.storage).toEqual([
+      expect.objectContaining({ name: "uploads", kind: "shared-volume", sharedBy: ["api"] }),
+    ]);
+    expect(
+      result.diagnostics.some((item) => item.message.includes("no managed mount is emitted")),
+    ).toBe(true);
   });
 
   it("fills gaps of a compose-origin IR and marks source as mixed", async () => {
@@ -113,78 +211,12 @@ describe("runInterview", () => {
     expect(driver.exhausted()).toBe(true);
   });
 
-  it("asks for budget and stores it in meta", async () => {
-    const driver = new ScriptedDriver([
-      "gcp",
-      "cheapest",
-      "europe-west1",
-      "vms",
-      "legacy",
-      false,
-      false,
-    ]);
-    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
-    const result = await runInterview(ir, driver);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.meta.budget).toBe("cheapest");
-  });
-
-  it("skips the budget question when a budget is passed in", async () => {
-    const driver = new ScriptedDriver(["gcp", "europe-west1", "vms", "legacy", false, false]);
-    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
-    const result = await runInterview(ir, driver, undefined, "production");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.meta.budget).toBe("production");
-    expect(driver.exhausted()).toBe(true);
-  });
-
   it.each([
     ["cheapest", ["ec2", "apprunner", "fargate"]],
     ["balanced", ["apprunner", "fargate", "ec2"]],
     ["production", ["fargate", "apprunner", "ec2"]],
   ] as [Budget, string[]][])("orders targets by %s budget", (budget, expected) => {
     expect(TARGET_ORDER[budget]).toEqual(expected);
-  });
-
-  it("asks per-service compute target on AWS with cost hints", async () => {
-    const driver = new ScriptedDriver([
-      "aws",
-      "cheapest",
-      "us-east-1",
-      "containers",
-      "web, jobs",
-      "web",
-      "ec2", // target for web
-      "ec2", // target for jobs
-      false,
-      false,
-    ]);
-    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
-    const result = await runInterview(ir, driver);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.compute.map((c) => c.target)).toEqual(["ec2", "ec2"]);
-  });
-
-  it("skips the target question for non-AWS providers", async () => {
-    const driver = new ScriptedDriver([
-      "gcp",
-      "balanced",
-      "europe-west1",
-      "containers",
-      "api",
-      "web",
-      false,
-      false,
-    ]);
-    const ir = projectIRSchema.parse({ meta: { name: "x", source: "interview" } });
-    const result = await runInterview(ir, driver);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.compute[0]?.target).toBeUndefined();
-    expect(driver.exhausted()).toBe(true);
   });
 
   it("drops public exposure when the user declines the load balancer", async () => {

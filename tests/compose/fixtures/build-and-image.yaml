@@ -1,0 +1,5 @@
+name: build-image
+services:
+  api:
+    build: { context: ./api }
+    image: ghcr.io/example/api:1.0

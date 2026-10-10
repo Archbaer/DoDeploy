@@ -1,0 +1,5 @@
+name: wordpress
+services:
+  wordpress: { image: wordpress:6.6, ports: ["8080:80"], depends_on: [db], volumes: [uploads:/var/www/html/wp-content/uploads] }
+  db: { image: mysql:8.0, environment: { MYSQL_ROOT_PASSWORD: TEST_ONLY_PASSWORD_SENTINEL } }
+volumes: { uploads: {} }

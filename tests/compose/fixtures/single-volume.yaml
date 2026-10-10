@@ -1,0 +1,4 @@
+name: volume-app
+services:
+  app: { image: nginx:1.27, volumes: [uploads:/data] }
+volumes: { uploads: {} }

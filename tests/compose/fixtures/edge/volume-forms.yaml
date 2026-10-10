@@ -1,0 +1,4 @@
+name: volume-forms
+services:
+  app: { image: nginx:1.27, volumes: ["./host:/host", "named:/data", "/scratch"] }
+volumes: { named: {} }

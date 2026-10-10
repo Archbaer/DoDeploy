@@ -1,0 +1,5 @@
+name: frontend-api
+services:
+  frontend: { image: nginx:1.27, ports: ["8080:80"] }
+  api: { image: ghcr.io/example/api:1.0, ports: ["9000:9000"], depends_on: [db] }
+  db: { image: postgres:16 }

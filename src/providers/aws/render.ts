@@ -1,6 +1,6 @@
 import type { ComputeUnit, EnrichedIR } from "../../ir/index.js";
 import { renderSections } from "../../render/engine.js";
-import { duplicateLabelError, quote, tfName } from "../../render/hcl.js";
+import { alignFiles, duplicateLabelError, quote, tfName } from "../../render/hcl.js";
 import type { RenderResult } from "../../render/types.js";
 import { resolveDatabaseVersion } from "../database-version.js";
 
@@ -378,7 +378,7 @@ const taskDefSection = (ir: EnrichedIR): string => {
       const { cpu, memory } = fargateSize(u);
       const portMappings =
         u.ports.length > 0
-          ? `    portMappings = [${u.ports
+          ? `      portMappings = [${u.ports
               .filter(
                 (port, index) =>
                   u.ports.findIndex(
@@ -391,9 +391,9 @@ const taskDefSection = (ir: EnrichedIR): string => {
           : "";
       const envVars = Object.entries(u.env)
         .filter(([key]) => !u.secrets.includes(key))
-        .map(([key, value]) => `      { name = ${quote(key)}, value = ${quote(value)} },`)
+        .map(([key, value]) => `        { name = ${quote(key)}, value = ${quote(value)} },`)
         .join("\n");
-      const environment = envVars.length > 0 ? `    environment = [\n${envVars}\n    ]` : "";
+      const environment = envVars.length > 0 ? `      environment = [\n${envVars}\n      ]` : "";
       const commandEntry = [
         u.entrypoint !== undefined
           ? `      entryPoint = [${u.entrypoint.map(quote).join(", ")}]`
@@ -888,7 +888,7 @@ export function renderAws(ir: EnrichedIR): RenderResult {
   }
 
   return {
-    files,
+    files: alignFiles(files),
     diagnostics,
   };
 }

@@ -106,6 +106,9 @@ export async function generateProject(options: GenerateOptions): Promise<Generat
 
   const rendered = pack.render(rulesResult.value);
   diagnostics.push(...rendered.diagnostics);
+  if (rendered.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+    return { ok: false, diagnostics };
+  }
 
   const writeResult = writeTfFileset(options.outDir, rendered.files);
   if (!writeResult.ok) {

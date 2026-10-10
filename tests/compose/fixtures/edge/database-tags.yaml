@@ -1,0 +1,4 @@
+services:
+  pg: { image: postgres:16.3-alpine }
+  mysql: { image: mysql:latest }
+  maria: { image: mariadb:11 }

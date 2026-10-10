@@ -1,0 +1,3 @@
+name: database-only
+services:
+  db: { image: postgres:16 }
