@@ -1,62 +1,83 @@
 name: release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
 
 permissions:
-  id-token: write # OIDC trusted publishing + npm provenance
-  contents: write # GitHub Release
+  contents: write
+  id-token: write
+  packages: write
 
 jobs:
   publish:
-    name: Gate · Publish · Release
+    name: Publish · GitHub Release
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
 
-      - name: Upgrade npm (trusted publishing requires >= 11.5.1)
-        run: npm install -g npm@latest
+      - name: Read package version
+        id: release
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Install (locked)
         run: npm ci
 
-      - name: Install Terraform (for HCL validation tests)
+      - name: Install Terraform
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.9.8
 
-      - name: Full quality gate
-        run: npm run ci
-
-      - name: Smoke test built CLI
-        run: node dist/bin.js --help
+      - name: Quality and Terraform verification
+        run: npm run ci && npm run test:terraform
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: |
+          if npm view "@archbaer/dodeploy@${{ steps.release.outputs.version }}" version; then
+            echo "Version already exists on npm; skipping publish."
+          else
+            npm publish --provenance --access public
+          fi
         env:
-          # First publish uses a token; switch to OIDC trusted publishing once
-          # the package exists on npmjs.com.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Verify publish
-        # The registry can take minutes to index a fresh package — poll instead
-        # of failing on the first 404.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@archbaer'
+
+      - name: Publish to GitHub Packages
         run: |
-          for i in $(seq 1 15); do
-            npm view @archbaer/dodeploy version && exit 0
-            sleep 20
-          done
-          echo "package did not appear on the registry within 5 minutes" >&2
-          exit 1
+          if npm view "@archbaer/dodeploy@${{ steps.release.outputs.version }}" --registry=https://npm.pkg.github.com version; then
+            echo "Version already exists on GitHub Packages; skipping publish."
+          else
+            npm publish --registry=https://npm.pkg.github.com
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
 
       - name: Create GitHub Release
-        run: gh release create "${{ github.ref_name }}" --generate-notes
+        run: |
+          if gh release view "${{ steps.release.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Release already exists; skipping creation."
+          else
+            gh release create "${{ steps.release.outputs.tag }}" \
+              --target "${{ github.event.workflow_run.head_sha }}" \
+              --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
