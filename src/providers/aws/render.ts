@@ -14,6 +14,7 @@ const fargateUnits = (ir: EnrichedIR) =>
 
 // Supported AWS Fargate task sizes: [cpu units, min memory MiB, max memory MiB]
 // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html
+const MAX_FARGATE_SIZE = [16384, 32768, 122880] as const;
 const FARGATE_SIZES: readonly (readonly [number, number, number])[] = [
   [256, 512, 2048],
   [512, 1024, 4096],
@@ -21,7 +22,7 @@ const FARGATE_SIZES: readonly (readonly [number, number, number])[] = [
   [2048, 4096, 16384],
   [4096, 8192, 30720],
   [8192, 16384, 61440],
-  [16384, 32768, 122880],
+  MAX_FARGATE_SIZE,
 ];
 
 /** Snap requested cpu/memory to the smallest supported Fargate task size. */
@@ -29,8 +30,7 @@ const fargateSize = (unit: ComputeUnit): { cpu: number; memory: number; adjustme
   const wantCpu = unit.cpu !== undefined ? Math.max(1, Math.round(unit.cpu * 1024)) : 512;
   const wantMem = unit.memoryMb ?? 1024;
   const size =
-    FARGATE_SIZES.find(([cpu, , max]) => cpu >= wantCpu && wantMem <= max) ??
-    FARGATE_SIZES[FARGATE_SIZES.length - 1]!;
+    FARGATE_SIZES.find(([cpu, , max]) => cpu >= wantCpu && wantMem <= max) ?? MAX_FARGATE_SIZE;
   const [cpu, minMem, maxMem] = size;
   const step = cpu >= 8192 ? 4096 : 1024;
   const memory = Math.min(maxMem, Math.max(minMem, Math.round(wantMem / step) * step));

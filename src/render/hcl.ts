@@ -77,7 +77,7 @@ export function alignAttributes(source: string): string {
     }
     const [, indent = "", key = "", value = ""] = match;
     const delimiter = /^<<-?(\w+)$/.exec(value)?.[1];
-    if (/[\[{]$/.test(value)) {
+    if (/[[{]$/.test(value)) {
       flush();
       lines[index] = `${indent}${key} = ${value}`;
       continue;

@@ -9,7 +9,7 @@ import { providers } from "./providers/index.js";
 import { applyRules } from "./rules/index.js";
 import { renderBanner } from "./ui/banner.js";
 
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 
 type ProviderId = "aws" | "gcp" | "azure";
 
