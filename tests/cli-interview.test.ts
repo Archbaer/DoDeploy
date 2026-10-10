@@ -64,7 +64,7 @@ describe("actual CLI interview PTY journeys", () => {
     "completes web + PostgreSQL + Redis on %s",
     (provider) => {
       const { out, result } = runPty({ ...appDbCache, provider });
-      expect(result.status).toBe(0);
+      expect(result.status, result.output).toBe(0);
       expect(readdirSync(out)).toContain("compute.tf");
       expect(readFileSync(join(out, "data.tf"), "utf8")).toMatch(/postgres|mysql|redis/i);
       if (provider === "gcp") expect(result.output).toContain("Cloud Run job");
@@ -78,7 +78,7 @@ describe("actual CLI interview PTY journeys", () => {
       budget: "production",
       omitFlags: true,
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(result.output).toContain("Target cloud provider?");
     expect(result.output).toContain("What matters most for this deployment?");
     expect(result.output).toContain("us-central1");
@@ -93,7 +93,7 @@ describe("actual CLI interview PTY journeys", () => {
       images: ["public.ecr.aws/example/web:1"],
       public: [true],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(readdirSync(out)).toContain("ec2.tf");
   });
 
@@ -106,7 +106,7 @@ describe("actual CLI interview PTY journeys", () => {
       images: ["public.ecr.aws/example/web:1"],
       public: [true],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(readdirSync(out)).toContain("apprunner.tf");
   });
 
@@ -118,7 +118,7 @@ describe("actual CLI interview PTY journeys", () => {
       images: ["ghcr.io/example/api:1", "ghcr.io/example/worker:1"],
       public: [true],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     const compute = readFileSync(join(out, "compute.tf"), "utf8");
     expect(compute).toContain("api");
     expect(compute).toContain("worker");
@@ -136,7 +136,7 @@ describe("actual CLI interview PTY journeys", () => {
       managed: [false],
       dependencies: ["external-db"],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(result.output).toContain("is external");
     expect(readFileSync(join(out, "data.tf"), "utf8")).not.toContain("aws_db_instance");
   });
@@ -150,7 +150,7 @@ describe("actual CLI interview PTY journeys", () => {
       persistent: [true],
       volumeNames: ["uploads"],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(result.output).toContain("no managed mount is emitted");
   });
 
@@ -163,7 +163,7 @@ describe("actual CLI interview PTY journeys", () => {
       storageAssets: true,
       storageChoice: "both",
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(readFileSync(join(out, "data.tf"), "utf8")).toContain("aws_s3_bucket");
   });
 
@@ -176,7 +176,7 @@ describe("actual CLI interview PTY journeys", () => {
       images: ["./api", "ghcr.io/example/worker:1"],
       dependencies: ["worker", "api"],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
     expect(result.output).toContain("Name already used");
     expect(result.output).toContain("image build/push");
     expect(readFileSync(join(out, "variables.tf"), "utf8")).toContain("api_image");
@@ -190,12 +190,12 @@ describe("actual CLI interview PTY journeys", () => {
       images: ["ghcr.io/example/api:1"],
       ports: ["bad", "8080"],
     });
-    expect(result.status).toBe(0);
+    expect(result.status, result.output).toBe(0);
   });
 
   it("cancels cleanly without writing when user presses Escape", () => {
     const { result, out } = runPty({ provider: "aws" }, { cancelAt: "Service name?" });
-    expect(result.status).toBe(130);
+    expect(result.status, result.output).toBe(130);
     expect(readdirSync(out)).toEqual([]);
   });
 });

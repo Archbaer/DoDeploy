@@ -176,7 +176,7 @@ describe("aws renderer", () => {
     expect(files["compute.tf"]).toContain('resource "aws_ecs_cluster"');
     expect(files["compute.tf"]).toContain('resource "aws_ecs_service" "api"');
     expect(files["data.tf"]).toContain('resource "aws_db_instance" "db"');
-    expect(files["data.tf"]).toContain('engine               = "postgres"');
+    expect(files["data.tf"]).toMatch(/engine\s*= "postgres"/);
     expect(files["data.tf"]).toContain('resource "aws_elasticache_cluster" "cache"');
   });
 

@@ -87,33 +87,58 @@ export function verifyTerraform(
       `terraform validate failed: ${JSON.stringify(validation)}\n${validationRun.stderr}`,
     );
   }
-  const contract = `mock_provider "${options.provider}" {}\nrun "catalog_mock_plan" {\n  command = plan\n}\n`;
+  const providerName = { aws: "aws", gcp: "google", azure: "azurerm" }[options.provider];
+  // Computed data-source values are read during planning. Supply realistic values
+  // where Terraform's random mock strings and empty lists violate their contract.
+  const mockData =
+    options.provider === "aws"
+      ? `
+  mock_data "aws_availability_zones" {
+    defaults = { names = ["us-east-1a", "us-east-1b"] }
+  }
+  mock_data "aws_partition" {
+    defaults = { partition = "aws" }
+  }
+  mock_data "aws_ami" {
+    defaults = { id = "ami-0123456789abcdef0" }
+  }
+`
+      : "";
+  const contract = `mock_provider "${providerName}" {${mockData}}\nrun "catalog_mock_plan" {\n  command = plan\n}\n`;
   const testPath = join(dir, "catalog.tftest.hcl");
-  const varsPath = join(dir, "catalog.auto.tfvars");
+  const varsPath = join(dir, "catalog.auto.tfvars.json");
   const variableSource = existsSync(join(dir, "variables.tf"))
     ? readFileSync(join(dir, "variables.tf"), "utf8")
     : "";
   const names = [...variableSource.matchAll(/variable\s+"([^"]+)"/g)].flatMap((match) =>
     match[1] ? [match[1]] : [],
   );
-  const values = names
-    .map(
-      (name) =>
-        `${JSON.stringify(name)} = ${JSON.stringify(name.endsWith("_image") ? "registry.example.test/synthetic:1.0" : name === "region" ? "us-east-1" : name === "project_name" ? "dodeploy-test" : name === "vpc_cidr" ? "10.0.0.0/16" : "synthetic-test-value")}`,
-    )
-    .join("\n");
+  const region = { aws: "us-east-1", gcp: "us-central1", azure: "eastus" }[options.provider];
+  const values = Object.fromEntries(
+    names.map((name) => [
+      name,
+      name.endsWith("_image")
+        ? "registry.example.test/synthetic:1.0"
+        : name === "region"
+          ? region
+          : name === "project_name"
+            ? "dodeploy-test"
+            : name === "vpc_cidr"
+              ? "10.0.0.0/16"
+              : name.endsWith("_password")
+                ? "Synthetic-Test-Password-123!"
+                : "synthetic-test-value",
+    ]),
+  );
   writeFileSync(testPath, contract);
-  writeFileSync(varsPath, values);
-  try {
-    const plan = run([`-chdir=${dir}`, "test", "-no-color"]);
-    writeFileSync(logPaths.mockPlan, `${plan.stdout}\n${plan.stderr}`);
-    if (plan.code !== 0)
-      throw new Error(
-        `terraform test mock plan failed (${plan.code}): ${plan.stdout}\n${plan.stderr}`,
-      );
-  } finally {
-    // Test-only files are deliberately retained for failure artifact inspection.
-  }
+  writeFileSync(varsPath, JSON.stringify(values, null, 2));
+  // Test-only files are deliberately retained for failure artifact inspection.
+  const plan = run([`-chdir=${dir}`, "test", "-no-color"]);
+  writeFileSync(logPaths.mockPlan, `${plan.stdout}\n${plan.stderr}`);
+  if (plan.code !== 0)
+    throw new Error(
+      `terraform test mock plan failed (${plan.code}): ${plan.stdout}\n${plan.stderr}`,
+    );
   return {
     provider: options.provider,
     version: versionObject.terraform_version,

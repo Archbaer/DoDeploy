@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { block, quote, tfName } from "../../src/render/index.js";
+import { alignAttributes, block, quote, tfName } from "../../src/render/index.js";
 
 describe("tfName", () => {
   it.each([
@@ -44,5 +44,56 @@ describe("block", () => {
   it("renders blocks without labels", () => {
     const out = block("provider", ["aws"], { region: "var.region" });
     expect(out).toBe('provider "aws" {\n  region = var.region\n}\n');
+  });
+});
+
+describe("template attribute alignment", () => {
+  it("aligns optional attributes while keeping multiline expressions in separate groups", () => {
+    expect(
+      alignAttributes(`  name = "api"
+  image = "api:1"
+  command = ["node", "worker.js"]
+  container_definitions    = jsonencode([
+    {
+      image = "api:1"
+      portMappings = [{ containerPort = 80 }]
+    }
+  ])`),
+    ).toBe(`  name    = "api"
+  image   = "api:1"
+  command = ["node", "worker.js"]
+  container_definitions = jsonencode([
+    {
+      image        = "api:1"
+      portMappings = [{ containerPort = 80 }]
+    }
+  ])`);
+  });
+
+  it("preserves quoted values, comments, and heredoc bytes while aligning surrounding attributes", () => {
+    const source = `  instance_type = "t3.small"
+  user_data = <<-EOF
+name=literal
+  shell_value = preserve spacing
+# shell comment = untouched
+EOF
+  tags = { Project = "test" }
+
+  image = "value = stays"
+  longer = "# stays" # TODO: keep this comment
+`;
+    const expected = `  instance_type = "t3.small"
+  user_data     = <<-EOF
+name=literal
+  shell_value = preserve spacing
+# shell comment = untouched
+EOF
+  tags          = { Project = "test" }
+
+  image  = "value = stays"
+  longer = "# stays" # TODO: keep this comment
+`;
+    expect(alignAttributes(source)).toBe(expected);
+    expect(alignAttributes(expected)).toBe(expected);
   });
 });

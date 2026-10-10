@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the real CLI under a PTY and answer Clack prompts from a JSON recipe."""
 import json
+import errno
 import fcntl
 import os
 import pty
@@ -32,19 +33,28 @@ def main():
     last_prompt_text = None
     deadline = time.monotonic() + recipe.get("timeout", 30)
     status = None
+    eof = False
     while time.monotonic() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.15)
+        ready, _, _ = select.select([] if eof else [fd], [], [], 0.15)
         if ready:
             try:
-                chunk = os.read(fd, 8192).decode("utf-8", "replace")
-            except OSError:
-                break
+                data = os.read(fd, 8192)
+            except OSError as error:
+                if error.errno != errno.EIO:
+                    raise
+                # Linux signals a closed PTY with EIO. Reap the child below;
+                # EOF does not mean the deadline expired.
+                data = b""
+            eof = not data
+            chunk = data.decode("utf-8", "replace")
             transcript += chunk
             prompt_buffer += chunk
         waited, child_status = os.waitpid(pid, os.WNOHANG)
         if waited:
             status = os.waitstatus_to_exitcode(child_status)
             break
+        if eof:
+            continue
 
         visible = clean(prompt_buffer)
         active_lines = re.findall(r"◆\s*([^\n]+)", visible)
@@ -177,6 +187,7 @@ def main():
         os.kill(pid, 9)
         os.waitpid(pid, 0)
         status = 124
+    os.close(fd)
     print(json.dumps({"status": status, "output": clean(transcript), "counts": counts}))
 
 
