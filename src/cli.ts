@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Command, Help } from "commander";
+import { makeCommandResult, toCommandDiagnostic } from "./cli-result.js";
 import { normalizeCompose, parseCompose } from "./compose/index.js";
 import { runDoctor } from "./doctor.js";
 import { generateProject } from "./generate.js";
@@ -8,7 +9,7 @@ import { providers } from "./providers/index.js";
 import { applyRules } from "./rules/index.js";
 import { renderBanner } from "./ui/banner.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 type ProviderId = "aws" | "gcp" | "azure";
 
@@ -49,19 +50,46 @@ function printDiagnostics(diagnostics: { severity: string; message: string }[]):
   }
 }
 
+function printJson(result: ReturnType<typeof makeCommandResult>): void {
+  console.log(JSON.stringify(result));
+}
+
+function cliDiagnostic(stage: string, message: string, code: string) {
+  return { code, stage, severity: "error" as const, message };
+}
+
 const analyzeCommand = new Command("analyze")
   .description("Parse a compose file and report findings + recommendations")
   .argument("[path]", "path to docker-compose.yaml")
   .option("--provider <id>", "target provider (aws|gcp|azure)", "aws")
-  .action((path: string | undefined, options: { provider: string }) => {
+  .option("--json", "write structured JSON result")
+  .action((path: string | undefined, options: { provider: string; json?: boolean }) => {
     const pack = providers[options.provider as ProviderId];
     if (!Object.hasOwn(providers, options.provider) || pack === undefined) {
-      console.error(`unknown provider: ${options.provider} (expected aws|gcp|azure)`);
+      const message = `unknown provider: ${options.provider} (expected aws|gcp|azure)`;
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            diagnostics: [cliDiagnostic("input", message, "provider.unknown")],
+          }),
+        );
+      else console.error(message);
       process.exitCode = 1;
       return;
     }
     if (path === undefined) {
-      console.error("analyze: pass a compose file path (or use `dodeploy generate` without one)");
+      const message = "analyze: pass a compose file path (or use `dodeploy generate` without one)";
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            diagnostics: [cliDiagnostic("input", message, "input.required")],
+          }),
+        );
+      else console.error(message);
       process.exitCode = 1;
       return;
     }
@@ -69,29 +97,80 @@ const analyzeCommand = new Command("analyze")
     try {
       content = readFileSync(path, "utf8");
     } catch {
-      console.error(`cannot read compose file: ${path}`);
+      const message = `cannot read compose file: ${path}`;
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            provider: pack.id,
+            diagnostics: [cliDiagnostic("compose", message, "input.unreadable")],
+          }),
+        );
+      else console.error(message);
       process.exitCode = 1;
       return;
     }
     const parsed = parseCompose(content);
     if (!parsed.ok) {
-      printDiagnostics(parsed.diagnostics);
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            provider: pack.id,
+            diagnostics: parsed.diagnostics.map(toCommandDiagnostic),
+          }),
+        );
+      else printDiagnostics(parsed.diagnostics);
       process.exitCode = 1;
       return;
     }
     const normalized = normalizeCompose(parsed.value);
     if (!normalized.ok) {
-      printDiagnostics(normalized.diagnostics);
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            provider: pack.id,
+            diagnostics: normalized.diagnostics.map(toCommandDiagnostic),
+          }),
+        );
+      else printDiagnostics(normalized.diagnostics);
       process.exitCode = 1;
       return;
     }
     const rulesResult = applyRules(normalized.value, pack.rules);
     if (!rulesResult.ok) {
-      printDiagnostics(rulesResult.diagnostics);
+      if (options.json)
+        printJson(
+          makeCommandResult({
+            command: "analyze",
+            status: "error",
+            provider: pack.id,
+            diagnostics: rulesResult.diagnostics.map(toCommandDiagnostic),
+          }),
+        );
+      else printDiagnostics(rulesResult.diagnostics);
       process.exitCode = 1;
       return;
     }
 
+    if (options.json) {
+      printJson(
+        makeCommandResult({
+          command: "analyze",
+          status: "success",
+          provider: pack.id,
+          diagnostics: [...normalized.diagnostics, ...rulesResult.diagnostics].map(
+            toCommandDiagnostic,
+          ),
+          recommendations: rulesResult.value.recommendations,
+        }),
+      );
+      return;
+    }
     console.log(`\n=== dodeploy analyze: ${path} (provider: ${pack.id}) ===`);
     if (normalized.diagnostics.length > 0) {
       console.log("\nFindings:");
@@ -119,6 +198,7 @@ const generateCommand = new Command("generate")
   .option("-o, --out <dir>", "output directory", "dodeploy-infra")
   .option("--name <name>", "project name (interview-only mode)")
   .option("--no-interview", "skip the interactive interview")
+  .option("--json", "write structured JSON result")
   .action(
     async (
       path: string | undefined,
@@ -128,11 +208,21 @@ const generateCommand = new Command("generate")
         out: string;
         name?: string;
         interview: boolean;
+        json?: boolean;
       },
     ) => {
       const provider = options.provider as ProviderId | undefined;
       if (provider !== undefined && !Object.hasOwn(providers, provider)) {
-        console.error(`unknown provider: ${options.provider} (expected aws|gcp|azure)`);
+        const message = `unknown provider: ${options.provider} (expected aws|gcp|azure)`;
+        if (options.json)
+          printJson(
+            makeCommandResult({
+              command: "generate",
+              status: "error",
+              diagnostics: [cliDiagnostic("input", message, "provider.unknown")],
+            }),
+          );
+        else console.error(message);
         process.exitCode = 1;
         return;
       }
@@ -143,15 +233,45 @@ const generateCommand = new Command("generate")
         budget !== "balanced" &&
         budget !== "production"
       ) {
-        console.error(`unknown budget: ${options.budget} (expected cheapest|balanced|production)`);
+        const message = `unknown budget: ${options.budget} (expected cheapest|balanced|production)`;
+        if (options.json)
+          printJson(
+            makeCommandResult({
+              command: "generate",
+              status: "error",
+              diagnostics: [cliDiagnostic("input", message, "budget.unknown")],
+            }),
+          );
+        else console.error(message);
+        process.exitCode = 1;
+        return;
+      }
+      if (options.json && options.interview) {
+        const message =
+          "--json requires --no-interview; pass --no-interview with explicit --provider/--budget/--name";
+        printJson(
+          makeCommandResult({
+            command: "generate",
+            status: "error",
+            diagnostics: [cliDiagnostic("interview", message, "interview.json_unsupported")],
+          }),
+        );
         process.exitCode = 1;
         return;
       }
       if (options.interview && !process.stdin.isTTY) {
-        console.error(
+        const message =
           "interactive interview requires a terminal (stdin is not a TTY) — " +
-            "re-run with --no-interview and pass --provider/--budget/--name explicitly",
-        );
+          "re-run with --no-interview and pass --provider/--budget/--name explicitly";
+        if (options.json)
+          printJson(
+            makeCommandResult({
+              command: "generate",
+              status: "error",
+              diagnostics: [cliDiagnostic("interview", message, "interview.tty_required")],
+            }),
+          );
+        else console.error(message);
         process.exitCode = 1;
         return;
       }
@@ -165,8 +285,31 @@ const generateCommand = new Command("generate")
         driver: options.interview ? new ClackDriver() : undefined,
       });
       if (!result.ok) {
-        printDiagnostics(result.diagnostics);
+        if (options.json)
+          printJson(
+            makeCommandResult({
+              command: "generate",
+              status: "error",
+              provider,
+              diagnostics: result.diagnostics.map(toCommandDiagnostic),
+            }),
+          );
+        else printDiagnostics(result.diagnostics);
         process.exitCode = 1;
+        return;
+      }
+      if (options.json) {
+        printJson(
+          makeCommandResult({
+            command: "generate",
+            status: result.deferred.length > 0 ? "deferred" : "success",
+            provider,
+            diagnostics: result.diagnostics.map(toCommandDiagnostic),
+            recommendations: result.recommendations,
+            files: result.filesWritten,
+            deferred: result.deferred,
+          }),
+        );
         return;
       }
       console.log(`\nWritten ${result.filesWritten.length} files to ${result.outDir}/`);
@@ -192,8 +335,22 @@ const generateCommand = new Command("generate")
 const doctorCommand = new Command("doctor")
   .description("Check your environment (terraform, runtime, compose file)")
   .argument("[path]", "path to docker-compose.yaml")
-  .action((path: string | undefined) => {
+  .option("--json", "write structured JSON result")
+  .action((path: string | undefined, options: { json?: boolean }) => {
     const checks = runDoctor({ composePath: path });
+    if (options.json) {
+      const failed = checks.some((check) => check.critical && !check.ok);
+      printJson(
+        makeCommandResult({
+          command: "doctor",
+          status: failed ? "error" : "success",
+          diagnostics: [],
+          checks,
+        }),
+      );
+      if (failed) process.exitCode = 1;
+      return;
+    }
     for (const check of checks) {
       const mark = check.ok ? "✓" : check.critical ? "✗" : "⚠";
       console.log(`${mark} ${check.label}: ${check.detail}`);
@@ -235,5 +392,41 @@ export async function run(argv: string[]): Promise<void> {
     program.outputHelp();
     return;
   }
-  await program.parseAsync(argv);
+  const command = argv[2];
+  const jsonCommand =
+    argv.includes("--json") &&
+    (command === "analyze" || command === "generate" || command === "doctor");
+  for (const command of [program, ...program.commands]) {
+    command.configureOutput({
+      writeErr: (message) => {
+        if (!jsonCommand) process.stderr.write(message);
+      },
+      outputError: (message, write) => {
+        if (!jsonCommand) write(message);
+      },
+    });
+    command.exitOverride();
+  }
+  try {
+    await program.parseAsync(argv);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "commander.helpDisplayed" || code === "commander.version") return;
+    if (!jsonCommand) throw error;
+    printJson(
+      makeCommandResult({
+        command: command as "analyze" | "generate" | "doctor",
+        status: "error",
+        diagnostics: [
+          {
+            code: "cli.usage_error",
+            stage: "cli",
+            severity: "error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ],
+      }),
+    );
+    process.exitCode = 1;
+  }
 }

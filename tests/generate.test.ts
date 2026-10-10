@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -30,11 +37,20 @@ describe("generateProject", async () => {
       const driver = new ScriptedDriver([
         "balanced",
         region,
-        "containers",
+        true,
         "api",
         "web",
+        "pushed",
+        "ghcr.io/example/api:1",
+        true,
+        "8080",
         false,
         false,
+        false,
+        "",
+        true,
+        false,
+        true,
       ]);
       const interviewDriver: InterviewDriver = driver;
       const select = interviewDriver.select.bind(driver);
@@ -129,6 +145,23 @@ describe("generateProject", async () => {
     expect(result.diagnostics.some((d) => d.stage === "compose")).toBe(true);
   });
 
+  it("does not write files when renderer reports a fatal diagnostic", async () => {
+    const out = mkdtempSync(join(tmpdir(), "dd-gen-render-error-"));
+    const compose = join(mkdtempSync(join(tmpdir(), "dd-gen-render-error-input-")), "compose.yaml");
+    writeFileSync(
+      compose,
+      `name: bad-labels\nservices:\n  api-one:\n    image: nginx:1.27\n  api_one:\n    image: nginx:1.27\n`,
+    );
+    const result = await generateProject({
+      composePath: compose,
+      provider: "aws",
+      outDir: out,
+      interview: false,
+    });
+    expect(result.ok).toBe(false);
+    expect(readdirSync(out)).toEqual([]);
+  });
+
   it("fails without provider in non-interactive mode", async () => {
     const result = await generateProject({
       composePath: WEB_DB_REDIS,
@@ -157,14 +190,34 @@ describe("generateProject", async () => {
       "aws", // provider (source === "interview")
       "balanced", // budget
       "us-east-1", // region
-      "containers", // workload type
-      "api, worker", // service names
-      "web", // kind
-      "fargate", // target for api
-      "fargate", // target for worker
-      true, // needs a database
-      "postgres", // engine
-      false, // static assets / uploads
+      true,
+      "api",
+      "web",
+      "pushed",
+      "ghcr.io/example/api:1",
+      true,
+      "8080",
+      "fargate",
+      false,
+      true,
+      "worker",
+      "worker",
+      "pushed",
+      "ghcr.io/example/worker:1",
+      "fargate",
+      false,
+      false,
+      true,
+      "postgres",
+      "db",
+      "16",
+      true,
+      false,
+      "db",
+      "db",
+      true,
+      false,
+      true,
     ]);
     const result = await generateProject({
       projectName: "demo",
@@ -212,12 +265,21 @@ describe("generateProject", async () => {
     const out = mkdtempSync(join(tmpdir(), "dd-gen-budget-"));
     const driver = new ScriptedDriver([
       "us-east-1", // region (provider+budget given)
-      "containers",
+      true,
       "api",
       "web",
-      "fargate", // target for api
+      "pushed",
+      "ghcr.io/example/api:1",
+      true,
+      "8080",
+      "fargate",
       false,
       false,
+      false,
+      "",
+      true,
+      false,
+      true,
     ]);
     const result = await generateProject({
       provider: "aws",
@@ -237,12 +299,21 @@ describe("generateProject", async () => {
       "aws",
       "cheapest",
       "us-east-1",
-      "containers",
+      true,
       "web",
       "web",
+      "pushed",
+      "public.ecr.aws/example/web:1",
+      true,
+      "8080",
       "ec2",
       false,
       false,
+      false,
+      "",
+      true,
+      false,
+      true,
     ]);
     const result = await generateProject({
       outDir: out,
@@ -261,12 +332,21 @@ describe("generateProject", async () => {
       "aws",
       "production",
       "us-east-1",
-      "containers",
+      true,
       "web",
       "web",
+      "pushed",
+      "ghcr.io/example/web:1",
+      true,
+      "8080",
       "fargate",
       false,
       false,
+      false,
+      "",
+      true,
+      false,
+      true,
     ]);
     const result = await generateProject({
       outDir: out,
@@ -279,12 +359,12 @@ describe("generateProject", async () => {
     expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
   });
 
-  it("journey: compose balanced renders App Runner and Fargate", async () => {
+  it("journey: compose excludes App Runner for non-ECR images", async () => {
     const out = mkdtempSync(join(tmpdir(), "dd-gen-balanced-"));
     const driver = new ScriptedDriver([
       "balanced",
       "us-east-1",
-      "apprunner", // target for web
+      "fargate", // App Runner excludes this image registry
       "fargate", // target for worker
       true, // keep public ports
       true, // manage postgres
@@ -299,7 +379,7 @@ describe("generateProject", async () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(existsSync(join(out, "apprunner.tf"))).toBe(true);
+    expect(existsSync(join(out, "apprunner.tf"))).toBe(false);
     expect(readFileSync(join(out, "compute.tf"), "utf8")).toContain("aws_ecs_cluster");
     expect(readFileSync(join(out, "data.tf"), "utf8")).toContain("aws_db_instance");
   });

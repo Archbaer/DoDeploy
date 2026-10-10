@@ -38,11 +38,6 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Install Terraform (for HCL validation tests)
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
-
       - name: Test with coverage
         run: npx vitest run --coverage
 
@@ -54,6 +49,57 @@ jobs:
 
       - name: Audit dependencies (high+)
         run: npx audit-ci --audit-level=high
+
+  terraform-verification:
+    name: Terraform · ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [aws, gcp, azure]
+    env:
+      DODEPLOY_REQUIRE_TERRAFORM: "1"
+      DODEPLOY_TEST_PROVIDER: ${{ matrix.provider }}
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build CLI
+        run: npm run build
+      - name: Install Terraform 1.9.8
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Verify Terraform and Python
+        run: |
+          terraform version -json > terraform-version.json
+          node -e 'const v=require("./terraform-version.json"); if(v.terraform_version!=="1.9.8") process.exit(1)'
+          python3 --version
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - name: Cache provider plugins
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-${{ runner.arch }}-terraform-1.9.8-${{ matrix.provider }}-${{ hashFiles('tests/terraform/locks/**') }}
+      - name: Strict provider integration and mock plans
+        run: npx vitest run --config vitest.terraform.config.ts
+      - name: Upload Terraform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-${{ matrix.provider }}-evidence
+          path: |
+            terraform-junit.xml
+            /tmp/dodeploy-*
+          if-no-files-found: warn
 
   scan:
     name: OSV vulnerability scan

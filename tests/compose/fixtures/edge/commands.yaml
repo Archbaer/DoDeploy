@@ -1,0 +1,2 @@
+services:
+  app: { image: busybox:1.36, command: "echo hello", entrypoint: ["sh", "-c"] }

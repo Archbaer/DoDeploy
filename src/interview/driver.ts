@@ -15,6 +15,7 @@ export interface InterviewDriver {
  */
 export class ScriptedDriver implements InterviewDriver {
   private queue: unknown[];
+  readonly prompts: { kind: string; message: string; options?: string[] }[] = [];
 
   constructor(responses: unknown[]) {
     this.queue = [...responses];
@@ -32,15 +33,22 @@ export class ScriptedDriver implements InterviewDriver {
     return value as T;
   }
 
-  text(): Promise<string> {
+  text(message = ""): Promise<string> {
+    this.prompts.push({ kind: "text", message });
     return Promise.resolve(this.next<string>("text"));
   }
 
-  select<T extends string>(): Promise<T> {
-    return Promise.resolve(this.next<T>("select"));
+  select<T extends string>(message = "", options: SelectOption<T>[] = []): Promise<T> {
+    this.prompts.push({ kind: "select", message, options: options.map((option) => option.value) });
+    const value = this.next<T>("select");
+    if (options.length > 0 && !options.some((option) => option.value === value)) {
+      throw new Error(`ScriptedDriver: "${value}" was not offered for ${message}`);
+    }
+    return Promise.resolve(value);
   }
 
-  confirm(): Promise<boolean> {
+  confirm(message = ""): Promise<boolean> {
+    this.prompts.push({ kind: "confirm", message });
     return Promise.resolve(this.next<boolean>("confirm"));
   }
 }

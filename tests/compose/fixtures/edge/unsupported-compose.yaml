@@ -1,0 +1,2 @@
+services:
+  app: { image: nginx:1.27, env_file: missing.env }

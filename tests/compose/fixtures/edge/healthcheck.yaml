@@ -1,0 +1,2 @@
+services:
+  app: { image: nginx:1.27, healthcheck: { test: ["CMD", "true"], interval: invalid } }

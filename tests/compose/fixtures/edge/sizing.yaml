@@ -1,0 +1,2 @@
+services:
+  app: { image: nginx:1.27, deploy: { resources: { limits: { cpus: "-1", memory: 0 } } } }

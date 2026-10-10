@@ -1,0 +1,9 @@
+name: runtime
+services:
+  api:
+    image: ghcr.io/example/api:1.0
+    command: ["node", "server.js"]
+    ports: ["8080:8080"]
+    environment: { LOG_LEVEL: info, API_TOKEN: TEST_ONLY_TOKEN_SENTINEL }
+    healthcheck: { test: ["CMD", "curl", "-f", "http://localhost:8080/health"], interval: 30s }
+    deploy: { resources: { limits: { cpus: "0.5", memory: 1G } } }

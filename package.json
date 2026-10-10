@@ -1,6 +1,6 @@
 {
   "name": "@archbaer/dodeploy",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Turn a docker-compose.yaml into deployable Terraform for AWS, GCP and Azure",
   "license": "Apache-2.0",
   "author": "Archbaer",
@@ -49,7 +49,8 @@
     "check:versions": "node scripts/check-exact-versions.mjs",
     "ci": "npm run check:versions && npm run check:engines && npm run lint && npm run typecheck && npm run test:coverage && npm run build",
     "prepublishOnly": "npm run ci",
-    "check:engines": "node scripts/check-engines.mjs"
+    "check:engines": "node scripts/check-engines.mjs",
+    "test:terraform": "DODEPLOY_REQUIRE_TERRAFORM=1 vitest run --config vitest.terraform.config.ts"
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",
