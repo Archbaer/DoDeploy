@@ -85,7 +85,7 @@ jobs:
           python3 --version
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
       - name: Cache provider plugins
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.terraform.d/plugin-cache
           key: ${{ runner.os }}-${{ runner.arch }}-terraform-1.9.8-${{ matrix.provider }}-${{ hashFiles('tests/terraform/locks/**') }}
